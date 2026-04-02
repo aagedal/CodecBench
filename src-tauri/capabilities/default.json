@@ -1,0 +1,15 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for CodecBench",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "fs:default",
+    "shell:allow-execute",
+    "shell:allow-open",
+    "os:default"
+  ]
+}
