@@ -2,12 +2,14 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getAvailableEncoders } from "../lib/tauri";
+import { useBenchmark } from "../hooks/useBenchmark";
 import type { EncoderDef, QualityPreset, QualityBenchmarkConfig } from "../types";
 
 const PRESETS: QualityPreset[] = ["Fast", "Medium", "High"];
 
 function QualityBenchmarkPage() {
   const navigate = useNavigate();
+  const { startQuality } = useBenchmark();
   const [encoders, setEncoders] = useState<EncoderDef[]>([]);
   const [selectedEncoders, setSelectedEncoders] = useState<Set<string>>(
     new Set(),
@@ -84,7 +86,8 @@ function QualityBenchmarkPage() {
       encoders: encoders.filter((e) => selectedEncoders.has(e.name)),
       presets: PRESETS.filter((p) => selectedPresets.has(p)),
     };
-    navigate("/benchmark/run", { state: { qualityConfig: config } });
+    startQuality(config);
+    navigate("/benchmark/run");
   };
 
   const softwareEncoders = encoders.filter(

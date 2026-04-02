@@ -1,90 +1,38 @@
-import { useState, useEffect, useRef } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import {
-  startBenchmark,
-  startQualityBenchmark,
-  cancelBenchmark,
-} from "../lib/tauri";
-import { onBenchmarkProgress } from "../lib/events";
-import type {
-  BenchmarkConfig,
-  QualityBenchmarkConfig,
-  BenchmarkProgress,
-  BenchmarkRun,
-} from "../types";
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useBenchmark } from "../hooks/useBenchmark";
 import { formatDuration, formatFps } from "../utils/format";
 
 function BenchmarkRunPage() {
-  const location = useLocation();
   const navigate = useNavigate();
-  const state = location.state as {
-    config?: BenchmarkConfig;
-    qualityConfig?: QualityBenchmarkConfig;
-  } | null;
+  const { state, progress, elapsed, cancel, reset } = useBenchmark();
 
-  const config = state?.config;
-  const qualityConfig = state?.qualityConfig;
-  const isQualityMode = !!qualityConfig;
-
-  const [progress, setProgress] = useState<BenchmarkProgress | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [elapsed, setElapsed] = useState(0);
-  const startTime = useRef(Date.now());
-  const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
-
+  // Redirect to results when complete
   useEffect(() => {
-    if (!config && !qualityConfig) {
-      navigate("/benchmark", { replace: true });
-      return;
+    if (state.status === "complete") {
+      const runId = state.run.id;
+      const run = state.run;
+      reset();
+      navigate(`/results/${runId}`, { state: { run } });
     }
+  }, [state, navigate, reset]);
 
-    let cancelled = false;
+  // If idle (no benchmark running), redirect back
+  useEffect(() => {
+    if (state.status === "idle") {
+      navigate("/benchmark", { replace: true });
+    }
+  }, [state.status, navigate]);
 
-    const run = async () => {
-      const unlisten = await onBenchmarkProgress((p) => {
-        if (!cancelled) setProgress(p);
-      });
+  if (state.status === "idle") return null;
 
-      startTime.current = Date.now();
-      timerRef.current = setInterval(() => {
-        setElapsed(Date.now() - startTime.current);
-      }, 100);
-
-      try {
-        let result: BenchmarkRun;
-        if (qualityConfig) {
-          result = await startQualityBenchmark(qualityConfig);
-        } else {
-          result = await startBenchmark(config!);
-        }
-        clearInterval(timerRef.current);
-        navigate(`/results/${result.id}`, { state: { run: result } });
-      } catch (e) {
-        clearInterval(timerRef.current);
-        if (!cancelled) {
-          setError(String(e));
-        }
-      } finally {
-        unlisten();
-      }
-    };
-
-    run();
-
-    return () => {
-      cancelled = true;
-      clearInterval(timerRef.current);
-    };
-  }, [config, qualityConfig, navigate]);
+  const isQualityMode =
+    (state.status === "running" && state.isQualityMode) ||
+    (state.status === "error" && state.isQualityMode);
 
   const handleCancel = async () => {
-    try {
-      await cancelBenchmark();
-    } catch {
-      // Ignore cancel errors
-    }
-    const backTo = isQualityMode ? "/quality" : "/benchmark";
-    navigate(backTo, { replace: true });
+    await cancel();
+    navigate(isQualityMode ? "/quality" : "/benchmark", { replace: true });
   };
 
   const progressPercent = progress
@@ -112,11 +60,14 @@ function BenchmarkRunPage() {
         </p>
       </div>
 
-      {error ? (
+      {state.status === "error" ? (
         <div className="bg-red-900/20 border border-red-800/50 rounded-xl p-5">
-          <p className="text-red-400 text-sm">{error}</p>
+          <p className="text-red-400 text-sm">{state.error}</p>
           <button
-            onClick={() => navigate(isQualityMode ? "/quality" : "/benchmark")}
+            onClick={() => {
+              reset();
+              navigate(isQualityMode ? "/quality" : "/benchmark");
+            }}
             className="mt-3 px-4 py-2 bg-surface-800 hover:bg-surface-700 rounded-lg text-sm transition-colors"
           >
             Back to Config
