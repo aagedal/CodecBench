@@ -81,6 +81,41 @@ function ResultsPage() {
     }
   };
 
+  const handleExportPdf = async () => {
+    if (!resultsRef.current) return;
+    try {
+      const { default: html2canvas } = await import("html2canvas");
+      const { default: jsPDF } = await import("jspdf");
+      const canvas = await html2canvas(resultsRef.current, {
+        backgroundColor: "#0f172a",
+        scale: 2,
+      });
+      const imgData = canvas.toDataURL("image/png");
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+
+      // A4 landscape for wide charts
+      const pdf = new jsPDF({
+        orientation: imgWidth > imgHeight ? "landscape" : "portrait",
+        unit: "px",
+        format: [imgWidth / 2, imgHeight / 2],
+      });
+      pdf.addImage(imgData, "PNG", 0, 0, imgWidth / 2, imgHeight / 2);
+
+      const blob = pdf.output("blob");
+      const path = await save({
+        defaultPath: `codecbench_${run!.id.slice(0, 8)}.pdf`,
+        filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+      });
+      if (path) {
+        const arrayBuffer = await blob.arrayBuffer();
+        await writeFile(path, new Uint8Array(arrayBuffer));
+      }
+    } catch (e) {
+      console.error("PDF export failed:", e);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-surface-400">
@@ -170,6 +205,12 @@ function ResultsPage() {
             className="px-3 py-1.5 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-xs transition-colors"
           >
             PNG
+          </button>
+          <button
+            onClick={handleExportPdf}
+            className="px-3 py-1.5 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-xs transition-colors"
+          >
+            PDF
           </button>
         </div>
       </div>
