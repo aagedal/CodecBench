@@ -52,6 +52,7 @@ pub fn run() {
             commands::database::get_runs_for_comparison,
             commands::system::get_system_info,
             commands::export::export_json,
+            commands::export::reveal_in_file_manager,
         ])
         .run(tauri::generate_context!())
         .expect("error while running CodecBench");

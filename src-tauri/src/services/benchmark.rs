@@ -199,6 +199,7 @@ pub async fn run_benchmark(
             ssim: quality.ssim,
             psnr: quality.psnr,
             ffmpeg_args: ffmpeg_args_str,
+            output_file: None,
         };
 
         results.push(result);
@@ -235,6 +236,7 @@ pub async fn run_benchmark(
         ffmpeg_version,
         benchmark_mode: "speed".into(),
         source_file: None,
+        output_dir: None,
         results,
         source_duration_sec,
         source_resolution: first_res,
@@ -405,6 +407,7 @@ pub async fn run_quality_benchmark(
             ssim: quality.ssim,
             psnr: quality.psnr,
             ffmpeg_args: ffmpeg_args_str,
+            output_file: Some(output_path.to_string_lossy().to_string()),
         });
     }
 
@@ -422,8 +425,7 @@ pub async fn run_quality_benchmark(
         },
     );
 
-    // Clean up encoded files
-    let _ = std::fs::remove_dir_all(&encodes_dir);
+    // Keep encoded files for quality mode — users want to inspect them
 
     // Extract just the filename from the full path
     let source_filename = std::path::Path::new(&config.source_path)
@@ -437,6 +439,7 @@ pub async fn run_quality_benchmark(
         ffmpeg_version,
         benchmark_mode: "quality".into(),
         source_file: source_filename,
+        output_dir: Some(encodes_dir.to_string_lossy().to_string()),
         results,
         source_duration_sec: duration.ceil() as u32,
         source_resolution: resolution,

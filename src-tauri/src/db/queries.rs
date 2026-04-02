@@ -13,8 +13,8 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
             id, timestamp, cpu_name, cpu_cores, cpu_threads, ram_gb,
             os, os_version, gpu, ffmpeg_version,
             source_duration_sec, source_resolution_w, source_resolution_h,
-            source_resolution_label, benchmark_mode, source_file
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+            source_resolution_label, benchmark_mode, source_file, output_dir
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         rusqlite::params![
             run.id,
             run.timestamp,
@@ -32,6 +32,7 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
             run.source_resolution.label,
             run.benchmark_mode,
             run.source_file,
+            run.output_dir,
         ],
     )?;
 
@@ -42,8 +43,8 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
                 codec_family, encoder_type, preset,
                 resolution_w, resolution_h, resolution_label,
                 encoding_time_ms, encoding_fps, output_size_bytes,
-                vmaf, ssim, psnr, ffmpeg_args
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                vmaf, ssim, psnr, ffmpeg_args, output_file
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             rusqlite::params![
                 result.id,
                 result.run_id,
@@ -62,6 +63,7 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
                 result.ssim,
                 result.psnr,
                 result.ffmpeg_args,
+                result.output_file,
             ],
         )?;
     }

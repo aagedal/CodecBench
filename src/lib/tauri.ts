@@ -41,3 +41,6 @@ export const getSystemInfo = () => invoke<SystemInfo>("get_system_info");
 
 export const exportJson = (runId: string) =>
   invoke<string>("export_json", { runId });
+
+export const revealInFileManager = (path: string) =>
+  invoke("reveal_in_file_manager", { path });

@@ -35,6 +35,7 @@ export interface BenchmarkResult {
   ssim: number | null;
   psnr: number | null;
   ffmpeg_args: string;
+  output_file: string | null;
 }
 
 export interface SystemInfo {
@@ -61,6 +62,7 @@ export interface BenchmarkRun {
   ffmpeg_version: string;
   benchmark_mode: "speed" | "quality";
   source_file: string | null;
+  output_dir: string | null;
   results: BenchmarkResult[];
   source_duration_sec: number;
   source_resolution: Resolution;

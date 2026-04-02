@@ -61,5 +61,15 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
         )?;
     }
 
+    let has_output_dir: bool = conn
+        .prepare("SELECT output_dir FROM benchmark_runs LIMIT 0")
+        .is_ok();
+    if !has_output_dir {
+        conn.execute_batch(
+            "ALTER TABLE benchmark_runs ADD COLUMN output_dir TEXT;
+             ALTER TABLE benchmark_results ADD COLUMN output_file TEXT;",
+        )?;
+    }
+
     Ok(())
 }

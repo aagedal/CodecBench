@@ -10,7 +10,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { getBenchmarkRun, exportJson } from "../lib/tauri";
+import { getBenchmarkRun, exportJson, revealInFileManager } from "../lib/tauri";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import type { BenchmarkRun } from "../types";
@@ -214,8 +214,32 @@ function ResultsPage() {
           >
             PDF
           </button>
+          {run.output_dir && (
+            <button
+              onClick={() => revealInFileManager(run.output_dir!)}
+              className="px-3 py-1.5 bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-700/50 rounded-lg text-xs text-emerald-400 transition-colors"
+            >
+              Open Encodes
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Source Info */}
+      {run.source_file && (
+        <div className="bg-surface-900 rounded-xl border border-surface-700 p-4 flex items-center justify-between">
+          <div className="text-sm">
+            <span className="text-surface-400">Source: </span>
+            <span className="text-white">{run.source_file}</span>
+            <span className="text-surface-500 ml-2">
+              {run.source_resolution.label} &middot; {run.source_duration_sec}s
+            </span>
+          </div>
+          <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-900/30 text-amber-400">
+            Quality
+          </span>
+        </div>
+      )}
 
       {/* System Info */}
       <div className="bg-surface-900 rounded-xl border border-surface-700 p-4">
@@ -465,6 +489,11 @@ function ResultsPage() {
                     </th>
                   </>
                 )}
+                {run.output_dir && (
+                  <th className="text-right p-3 text-surface-400 font-medium">
+                    File
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -508,6 +537,16 @@ function ResultsPage() {
                         {r.psnr?.toFixed(1) ?? "—"}
                       </td>
                     </>
+                  )}
+                  {r.output_file && (
+                    <td className="p-3 text-right">
+                      <button
+                        onClick={() => revealInFileManager(r.output_file!)}
+                        className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                      >
+                        Reveal
+                      </button>
+                    </td>
                   )}
                 </tr>
               ))}

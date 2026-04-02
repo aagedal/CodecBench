@@ -88,6 +88,7 @@ pub struct BenchmarkResult {
     pub ssim: Option<f64>,
     pub psnr: Option<f64>,
     pub ffmpeg_args: String,
+    pub output_file: Option<String>,   // path to encoded file (quality mode only)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +99,7 @@ pub struct BenchmarkRun {
     pub ffmpeg_version: String,
     pub benchmark_mode: String,        // "speed" or "quality"
     pub source_file: Option<String>,   // filename for quality mode, None for speed (synthetic)
+    pub output_dir: Option<String>,    // directory containing encoded files (quality mode only)
     pub results: Vec<BenchmarkResult>,
     pub source_duration_sec: u32,
     pub source_resolution: Resolution,
