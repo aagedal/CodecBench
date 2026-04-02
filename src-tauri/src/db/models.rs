@@ -17,6 +17,8 @@ pub fn run_from_row(row: &Row) -> rusqlite::Result<BenchmarkRun> {
             gpu: row.get("gpu")?,
         },
         ffmpeg_version: row.get("ffmpeg_version")?,
+        benchmark_mode: row.get("benchmark_mode")?,
+        source_file: row.get("source_file")?,
         results: Vec::new(),
         source_duration_sec: row.get("source_duration_sec")?,
         source_resolution: Resolution {
@@ -87,6 +89,8 @@ pub fn summary_from_row(row: &Row) -> rusqlite::Result<BenchmarkRunSummary> {
         cpu_name: row.get("cpu_name")?,
         os: row.get("os")?,
         ffmpeg_version: row.get("ffmpeg_version")?,
+        benchmark_mode: row.get("benchmark_mode")?,
+        source_file: row.get("source_file")?,
         result_count: row.get("result_count")?,
         resolutions: Vec::new(), // populated separately
     })

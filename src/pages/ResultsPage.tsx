@@ -177,7 +177,9 @@ function ResultsPage() {
     return entry;
   });
 
-  const hasQuality = run.results.some((r) => r.vmaf != null);
+  const hasQuality = run.results.some(
+    (r) => r.vmaf != null || r.ssim != null || r.psnr != null,
+  );
   const presets = [...new Set(run.results.map((r) => r.preset))];
 
   return (
@@ -355,6 +357,79 @@ function ResultsPage() {
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      {/* Quality Metrics Chart */}
+      {hasQuality && (() => {
+        const hasSSIM = run.results.some((r) => r.ssim != null);
+        const hasPSNR = run.results.some((r) => r.psnr != null);
+        const hasVMAF = run.results.some((r) => r.vmaf != null);
+
+        const vmafData = hasVMAF ? encoderNames.map((name) => {
+          const entry: Record<string, string | number> = { name };
+          for (const preset of ["Fast", "Medium", "High"]) {
+            const result = run.results.find(
+              (r) => r.encoder.display_name === name && r.preset === preset,
+            );
+            if (result?.vmaf != null) entry[preset] = parseFloat(result.vmaf.toFixed(1));
+          }
+          return entry;
+        }) : [];
+
+        return (
+          <>
+            {hasVMAF && (
+              <div className="bg-surface-900 rounded-xl border border-surface-700 p-5">
+                <h3 className="text-sm font-semibold text-surface-300 mb-4">
+                  VMAF Score (0-100)
+                </h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={vmafData} barCategoryGap="20%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={{ stroke: "#475569" }} />
+                    <YAxis domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={{ stroke: "#475569" }} />
+                    <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569", borderRadius: "8px" }} />
+                    <Legend />
+                    {presets.map((preset) => (
+                      <Bar key={preset} dataKey={preset} fill={PRESET_COLORS[preset]} radius={[4, 4, 0, 0]} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {(hasSSIM || hasPSNR) && (
+              <div className="bg-surface-900 rounded-xl border border-surface-700 p-5">
+                <h3 className="text-sm font-semibold text-surface-300 mb-4">
+                  Quality Metrics{hasSSIM ? " — SSIM %" : ""}{hasPSNR ? " / PSNR dB" : ""}
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-surface-700">
+                        <th className="text-left p-2 text-surface-400 font-medium">Encoder</th>
+                        <th className="text-left p-2 text-surface-400 font-medium">Preset</th>
+                        {hasSSIM && <th className="text-right p-2 text-surface-400 font-medium">SSIM</th>}
+                        {hasPSNR && <th className="text-right p-2 text-surface-400 font-medium">PSNR (dB)</th>}
+                        {hasVMAF && <th className="text-right p-2 text-surface-400 font-medium">VMAF</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {run.results.filter((r) => r.ssim != null || r.psnr != null || r.vmaf != null).map((r) => (
+                        <tr key={r.id} className="border-b border-surface-800">
+                          <td className="p-2 text-white">{r.encoder.display_name}</td>
+                          <td className="p-2 text-surface-300">{r.preset}</td>
+                          {hasSSIM && <td className="p-2 text-right text-surface-200">{r.ssim != null ? (r.ssim * 100).toFixed(2) + "%" : "—"}</td>}
+                          {hasPSNR && <td className="p-2 text-right text-surface-200">{r.psnr?.toFixed(1) ?? "—"}</td>}
+                          {hasVMAF && <td className="p-2 text-right text-surface-200">{r.vmaf?.toFixed(1) ?? "—"}</td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* Results Table */}
       <div className="bg-surface-900 rounded-xl border border-surface-700 overflow-hidden">

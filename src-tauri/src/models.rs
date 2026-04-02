@@ -96,6 +96,8 @@ pub struct BenchmarkRun {
     pub timestamp: String,
     pub system_info: SystemInfo,
     pub ffmpeg_version: String,
+    pub benchmark_mode: String,        // "speed" or "quality"
+    pub source_file: Option<String>,   // filename for quality mode, None for speed (synthetic)
     pub results: Vec<BenchmarkResult>,
     pub source_duration_sec: u32,
     pub source_resolution: Resolution,
@@ -108,6 +110,8 @@ pub struct BenchmarkRunSummary {
     pub cpu_name: String,
     pub os: String,
     pub ffmpeg_version: String,
+    pub benchmark_mode: String,
+    pub source_file: Option<String>,
     pub result_count: u32,
     pub resolutions: Vec<String>,
 }

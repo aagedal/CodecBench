@@ -233,6 +233,8 @@ pub async fn run_benchmark(
         timestamp,
         system_info,
         ffmpeg_version,
+        benchmark_mode: "speed".into(),
+        source_file: None,
         results,
         source_duration_sec,
         source_resolution: first_res,
@@ -423,11 +425,18 @@ pub async fn run_quality_benchmark(
     // Clean up encoded files
     let _ = std::fs::remove_dir_all(&encodes_dir);
 
+    // Extract just the filename from the full path
+    let source_filename = std::path::Path::new(&config.source_path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string());
+
     let run = BenchmarkRun {
         id: run_id,
         timestamp,
         system_info,
         ffmpeg_version,
+        benchmark_mode: "quality".into(),
+        source_file: source_filename,
         results,
         source_duration_sec: duration.ceil() as u32,
         source_resolution: resolution,

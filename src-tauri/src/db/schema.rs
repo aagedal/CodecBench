@@ -44,8 +44,22 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_results_run_id ON benchmark_results(run_id);
+
+        -- Migration: add benchmark_mode and source_file columns
+        -- These use ALTER TABLE so they work on existing databases
         ",
     )?;
+
+    // Add columns if they don't exist (SQLite doesn't have IF NOT EXISTS for ALTER TABLE)
+    let has_mode: bool = conn
+        .prepare("SELECT benchmark_mode FROM benchmark_runs LIMIT 0")
+        .is_ok();
+    if !has_mode {
+        conn.execute_batch(
+            "ALTER TABLE benchmark_runs ADD COLUMN benchmark_mode TEXT NOT NULL DEFAULT 'speed';
+             ALTER TABLE benchmark_runs ADD COLUMN source_file TEXT;",
+        )?;
+    }
 
     Ok(())
 }

@@ -13,8 +13,8 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
             id, timestamp, cpu_name, cpu_cores, cpu_threads, ram_gb,
             os, os_version, gpu, ffmpeg_version,
             source_duration_sec, source_resolution_w, source_resolution_h,
-            source_resolution_label
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            source_resolution_label, benchmark_mode, source_file
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         rusqlite::params![
             run.id,
             run.timestamp,
@@ -30,6 +30,8 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
             run.source_resolution.width,
             run.source_resolution.height,
             run.source_resolution.label,
+            run.benchmark_mode,
+            run.source_file,
         ],
     )?;
 
@@ -71,7 +73,7 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
 pub fn get_all_runs(conn: &Connection) -> Result<Vec<BenchmarkRunSummary>, AppError> {
     let mut stmt = conn.prepare(
         "SELECT r.id, r.timestamp, r.cpu_name, r.os, r.ffmpeg_version,
-                COUNT(res.id) as result_count
+                r.benchmark_mode, r.source_file, COUNT(res.id) as result_count
          FROM benchmark_runs r
          LEFT JOIN benchmark_results res ON res.run_id = r.id
          GROUP BY r.id

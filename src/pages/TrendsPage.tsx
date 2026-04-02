@@ -14,11 +14,14 @@ import type { BenchmarkRun, BenchmarkRunSummary } from "../types";
 import { formatDate } from "../utils/format";
 import { getColorForIndex } from "../utils/colors";
 
+type ModeFilter = "speed" | "quality";
+
 function TrendsPage() {
   const [summaries, setSummaries] = useState<BenchmarkRunSummary[]>([]);
   const [runs, setRuns] = useState<BenchmarkRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCpu, setSelectedCpu] = useState<string | null>(null);
+  const [modeFilter, setModeFilter] = useState<ModeFilter>("speed");
 
   useEffect(() => {
     const load = async () => {
@@ -26,7 +29,6 @@ function TrendsPage() {
         const data = await getBenchmarkRuns();
         setSummaries(data);
 
-        // Group by CPU name
         const cpus = [...new Set(data.map((r) => r.cpu_name))];
         if (cpus.length > 0) {
           setSelectedCpu(cpus[0]);
@@ -40,11 +42,13 @@ function TrendsPage() {
     load();
   }, []);
 
-  // Load full runs for the selected CPU
+  // Load full runs for the selected CPU + mode
   useEffect(() => {
     if (!selectedCpu) return;
     const cpuRuns = summaries
-      .filter((s) => s.cpu_name === selectedCpu)
+      .filter(
+        (s) => s.cpu_name === selectedCpu && s.benchmark_mode === modeFilter,
+      )
       .map((s) => s.id);
 
     if (cpuRuns.length === 0) {
@@ -55,23 +59,34 @@ function TrendsPage() {
     getRunsForComparison(cpuRuns)
       .then(setRuns)
       .catch(console.error);
-  }, [selectedCpu, summaries]);
+  }, [selectedCpu, modeFilter, summaries]);
 
   const cpuNames = useMemo(
     () => [...new Set(summaries.map((s) => s.cpu_name))],
     [summaries],
   );
 
-  // Build trend data: for each encoder+preset combo, track fps over time
+  const filteredCount = summaries.filter(
+    (s) => s.cpu_name === selectedCpu && s.benchmark_mode === modeFilter,
+  ).length;
+
+  // Count per mode for the selected CPU
+  const speedCount = summaries.filter(
+    (s) => s.cpu_name === selectedCpu && s.benchmark_mode === "speed",
+  ).length;
+  const qualityCount = summaries.filter(
+    (s) => s.cpu_name === selectedCpu && s.benchmark_mode === "quality",
+  ).length;
+
+  // Build trend data
   const { trendData, encoderKeys } = useMemo(() => {
     if (runs.length === 0) return { trendData: [], encoderKeys: [] };
 
-    // Sort runs by timestamp
     const sorted = [...runs].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
     );
 
-    // Collect all encoder+preset combos
     const keys = new Set<string>();
     for (const run of sorted) {
       for (const r of run.results) {
@@ -84,6 +99,7 @@ function TrendsPage() {
       const point: Record<string, string | number> = {
         date: formatDate(run.timestamp),
         ffmpeg: run.ffmpeg_version.replace(/^ffmpeg version /, "").split(" ")[0],
+        source: run.source_file ?? "synthetic",
       };
       for (const r of run.results) {
         const key = `${r.encoder.display_name} (${r.preset})`;
@@ -111,10 +127,6 @@ function TrendsPage() {
     );
   }
 
-  const cpuRunCount = summaries.filter(
-    (s) => s.cpu_name === selectedCpu,
-  ).length;
-
   return (
     <div className="space-y-6">
       <div>
@@ -124,6 +136,36 @@ function TrendsPage() {
         </p>
       </div>
 
+      {/* Mode Filter */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setModeFilter("speed")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            modeFilter === "speed"
+              ? "bg-blue-600 text-white"
+              : "bg-surface-800 text-surface-400 hover:text-surface-200"
+          }`}
+        >
+          Speed Benchmarks
+          {selectedCpu && (
+            <span className="ml-1.5 opacity-60">({speedCount})</span>
+          )}
+        </button>
+        <button
+          onClick={() => setModeFilter("quality")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            modeFilter === "quality"
+              ? "bg-blue-600 text-white"
+              : "bg-surface-800 text-surface-400 hover:text-surface-200"
+          }`}
+        >
+          Quality Benchmarks
+          {selectedCpu && (
+            <span className="ml-1.5 opacity-60">({qualityCount})</span>
+          )}
+        </button>
+      </div>
+
       {/* CPU Selector */}
       <div className="bg-surface-900 rounded-xl border border-surface-700 p-5">
         <h3 className="text-sm font-semibold text-surface-300 uppercase tracking-wider mb-3">
@@ -131,7 +173,9 @@ function TrendsPage() {
         </h3>
         <div className="flex flex-wrap gap-2">
           {cpuNames.map((cpu) => {
-            const count = summaries.filter((s) => s.cpu_name === cpu).length;
+            const count = summaries.filter(
+              (s) => s.cpu_name === cpu && s.benchmark_mode === modeFilter,
+            ).length;
             return (
               <button
                 key={cpu}
@@ -150,14 +194,16 @@ function TrendsPage() {
         </div>
       </div>
 
-      {cpuRunCount < 2 ? (
+      {filteredCount < 2 ? (
         <div className="bg-surface-900 rounded-xl border border-surface-700 p-8 text-center">
           <p className="text-surface-400">
-            Need at least 2 benchmark runs on the same system to show trends.
+            Need at least 2{" "}
+            {modeFilter === "speed" ? "speed" : "quality"} benchmark runs on
+            the same system to show trends.
           </p>
           <p className="text-surface-500 text-sm mt-1">
-            Currently {cpuRunCount} run{cpuRunCount !== 1 ? "s" : ""} for this
-            system.
+            Currently {filteredCount} run
+            {filteredCount !== 1 ? "s" : ""} for this system.
           </p>
         </div>
       ) : (
@@ -186,15 +232,19 @@ function TrendsPage() {
                     borderRadius: "8px",
                     fontSize: "12px",
                   }}
-                  labelFormatter={(label, payload) => {
-                    const ffmpeg =
-                      payload?.[0]?.payload?.ffmpeg ?? "";
-                    return `${label}${ffmpeg ? ` — ffmpeg ${ffmpeg}` : ""}`;
+                  labelFormatter={(_label, payload) => {
+                    const p = payload?.[0]?.payload;
+                    if (!p) return "";
+                    const ffmpeg = p.ffmpeg ?? "";
+                    const source = p.source ?? "";
+                    let label = p.date;
+                    if (ffmpeg) label += ` | ffmpeg ${ffmpeg}`;
+                    if (source && source !== "synthetic")
+                      label += ` | ${source}`;
+                    return label;
                   }}
                 />
-                <Legend
-                  wrapperStyle={{ fontSize: "11px" }}
-                />
+                <Legend wrapperStyle={{ fontSize: "11px" }} />
                 {encoderKeys.map((key, i) => (
                   <Line
                     key={key}
@@ -219,10 +269,13 @@ function TrendsPage() {
                     Date
                   </th>
                   <th className="text-left p-3 text-surface-400 font-medium">
-                    FFmpeg Version
+                    FFmpeg
                   </th>
                   <th className="text-left p-3 text-surface-400 font-medium">
                     OS
+                  </th>
+                  <th className="text-left p-3 text-surface-400 font-medium">
+                    Source
                   </th>
                   <th className="text-right p-3 text-surface-400 font-medium">
                     Encodes
@@ -251,6 +304,9 @@ function TrendsPage() {
                       </td>
                       <td className="p-3 text-surface-200">
                         {run.system_info.os} {run.system_info.os_version}
+                      </td>
+                      <td className="p-3 text-surface-300 text-xs">
+                        {run.source_file ?? "synthetic (testsrc2)"}
                       </td>
                       <td className="p-3 text-right text-surface-200">
                         {run.results.length}

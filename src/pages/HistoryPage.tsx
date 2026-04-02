@@ -115,6 +115,15 @@ function HistoryPage() {
                   <p className="text-sm font-medium text-white truncate">
                     {run.cpu_name}
                   </p>
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                      run.benchmark_mode === "quality"
+                        ? "bg-amber-900/30 text-amber-400"
+                        : "bg-blue-900/30 text-blue-400"
+                    }`}
+                  >
+                    {run.benchmark_mode === "quality" ? "Quality" : "Speed"}
+                  </span>
                   <span className="text-xs text-surface-500">
                     {run.os}
                   </span>
@@ -123,6 +132,9 @@ function HistoryPage() {
                   <span>{formatDate(run.timestamp)}</span>
                   <span>{run.result_count} results</span>
                   <span>{run.resolutions.join(", ")}</span>
+                  {run.source_file && (
+                    <span className="text-surface-500">{run.source_file}</span>
+                  )}
                 </div>
                 <p className="text-xs text-surface-500 mt-0.5 truncate">
                   {run.ffmpeg_version}

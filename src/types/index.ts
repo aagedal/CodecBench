@@ -59,6 +59,8 @@ export interface BenchmarkRun {
   timestamp: string;
   system_info: SystemInfo;
   ffmpeg_version: string;
+  benchmark_mode: "speed" | "quality";
+  source_file: string | null;
   results: BenchmarkResult[];
   source_duration_sec: number;
   source_resolution: Resolution;
@@ -70,6 +72,8 @@ export interface BenchmarkRunSummary {
   cpu_name: string;
   os: string;
   ffmpeg_version: string;
+  benchmark_mode: "speed" | "quality";
+  source_file: string | null;
   result_count: number;
   resolutions: string[];
 }
