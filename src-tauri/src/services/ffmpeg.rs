@@ -324,12 +324,13 @@ pub async fn generate_test_source(
     Ok(())
 }
 
-/// Run an encoding job and return (encoding_time_ms, output_size_bytes, last_fps)
+/// Run an encoding job and return (encoding_time_ms, output_size_bytes, calculated_fps)
 pub async fn run_encode(
     ffmpeg_path: &Path,
     input_path: &Path,
     output_path: &Path,
     encoder_args: &[String],
+    total_frames: u64,
     progress_callback: impl Fn(f64) + Send,
 ) -> Result<(u64, u64, f64), AppError> {
     // Ensure parent directory exists
@@ -358,8 +359,6 @@ pub async fn run_encode(
     if let Some(stderr) = child.stderr.take() {
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
-        // ffmpeg writes progress to stderr as carriage-return delimited lines
-        // We read line by line; tokio handles the async buffering
         while let Ok(Some(line)) = lines.next_line().await {
             if let Some(caps) = fps_re.captures(&line) {
                 if let Some(fps_match) = caps.get(1) {
@@ -390,5 +389,123 @@ pub async fn run_encode(
         .map(|m| m.len())
         .unwrap_or(0);
 
-    Ok((elapsed_ms, output_size, last_fps))
+    // Always calculate fps from total_frames / elapsed time.
+    // This is authoritative — ffmpeg's reported fps can be 0 for fast encodes.
+    let calculated_fps = if elapsed_ms > 0 {
+        (total_frames as f64) / (elapsed_ms as f64 / 1000.0)
+    } else {
+        last_fps
+    };
+
+    Ok((elapsed_ms, output_size, calculated_fps))
+}
+
+/// Probe a video file for duration, resolution, and frame rate.
+/// Returns (width, height, fps, duration_sec, total_frames).
+pub async fn probe_video(
+    ffmpeg_path: &Path,
+    video_path: &Path,
+) -> Result<(u32, u32, f64, f64, u64), AppError> {
+    // Use ffprobe (same directory as ffmpeg) or fall back to ffmpeg
+    let ffprobe_path = ffmpeg_path
+        .parent()
+        .map(|p| {
+            let name = if cfg!(target_os = "windows") {
+                "ffprobe.exe"
+            } else {
+                "ffprobe"
+            };
+            p.join(name)
+        })
+        .filter(|p| p.exists());
+
+    let (width, height, fps, duration) = if let Some(ref ffprobe) = ffprobe_path {
+        let output = Command::new(ffprobe)
+            .args([
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height,r_frame_rate,duration",
+                "-show_entries", "format=duration",
+                "-of", "json",
+            ])
+            .arg(video_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| AppError::FfmpegExecution(format!("ffprobe failed: {}", e)))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let json: serde_json::Value = serde_json::from_str(&stdout)
+            .map_err(|e| AppError::FfmpegExecution(format!("Failed to parse ffprobe output: {}", e)))?;
+
+        let stream = &json["streams"][0];
+        let w = stream["width"].as_u64().unwrap_or(1920) as u32;
+        let h = stream["height"].as_u64().unwrap_or(1080) as u32;
+
+        let fps_str = stream["r_frame_rate"].as_str().unwrap_or("30/1");
+        let fps_val = if fps_str.contains('/') {
+            let parts: Vec<&str> = fps_str.split('/').collect();
+            let num: f64 = parts[0].parse().unwrap_or(30.0);
+            let den: f64 = parts[1].parse().unwrap_or(1.0);
+            if den > 0.0 { num / den } else { 30.0 }
+        } else {
+            fps_str.parse().unwrap_or(30.0)
+        };
+
+        // Duration from stream or format
+        let dur = stream["duration"]
+            .as_str()
+            .and_then(|s| s.parse::<f64>().ok())
+            .or_else(|| {
+                json["format"]["duration"]
+                    .as_str()
+                    .and_then(|s| s.parse::<f64>().ok())
+            })
+            .unwrap_or(10.0);
+
+        (w, h, fps_val, dur)
+    } else {
+        // Fallback: use ffmpeg -i and parse stderr
+        let output = Command::new(ffmpeg_path)
+            .args(["-i"])
+            .arg(video_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| AppError::FfmpegExecution(format!("ffmpeg probe failed: {}", e)))?;
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        let res_re = Regex::new(r"(\d{2,5})x(\d{2,5})").unwrap();
+        let (w, h) = res_re.captures(&stderr)
+            .map(|c| {
+                let w: u32 = c[1].parse().unwrap_or(1920);
+                let h: u32 = c[2].parse().unwrap_or(1080);
+                (w, h)
+            })
+            .unwrap_or((1920, 1080));
+
+        let fps_re = Regex::new(r"(\d+(?:\.\d+)?)\s*fps").unwrap();
+        let fps_val = fps_re.captures(&stderr)
+            .and_then(|c| c[1].parse::<f64>().ok())
+            .unwrap_or(30.0);
+
+        let dur_re = Regex::new(r"Duration:\s*(\d+):(\d+):(\d+)\.(\d+)").unwrap();
+        let dur = dur_re.captures(&stderr)
+            .map(|c| {
+                let h: f64 = c[1].parse().unwrap_or(0.0);
+                let m: f64 = c[2].parse().unwrap_or(0.0);
+                let s: f64 = c[3].parse().unwrap_or(0.0);
+                let cs: f64 = c[4].parse().unwrap_or(0.0);
+                h * 3600.0 + m * 60.0 + s + cs / 100.0
+            })
+            .unwrap_or(10.0);
+
+        (w, h, fps_val, dur)
+    };
+
+    let total_frames = (fps * duration).round() as u64;
+    Ok((width, height, fps, duration, total_frames))
 }

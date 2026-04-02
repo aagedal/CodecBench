@@ -56,6 +56,10 @@ pub async fn run_benchmark(
     let total_steps = jobs.len() as u32;
     let mut results: Vec<BenchmarkResult> = Vec::new();
 
+    let source_fps: u32 = 30;
+    let source_duration_sec: u32 = 10;
+    let total_frames = (source_fps * source_duration_sec) as u64;
+
     // Generate test sources for each resolution
     for res in &config.resolutions {
         let source_path = source_path_for_resolution(&sources_dir, res);
@@ -74,8 +78,15 @@ pub async fn run_benchmark(
             },
         );
 
-        ffmpeg::generate_test_source(&ffmpeg_path, &source_path, res.width, res.height, 10, 30)
-            .await?;
+        ffmpeg::generate_test_source(
+            &ffmpeg_path,
+            &source_path,
+            res.width,
+            res.height,
+            source_duration_sec,
+            source_fps,
+        )
+        .await?;
     }
 
     // Run each encode job sequentially
@@ -128,6 +139,7 @@ pub async fn run_benchmark(
             &source_path,
             &output_path,
             &encode_args,
+            total_frames,
             move |fps| {
                 let _ = app_clone.emit(
                     "benchmark-progress",
@@ -222,8 +234,203 @@ pub async fn run_benchmark(
         system_info,
         ffmpeg_version,
         results,
-        source_duration_sec: 10,
+        source_duration_sec,
         source_resolution: first_res,
+    };
+
+    Ok(run)
+}
+
+/// Run a quality-focused benchmark using a user-provided source clip.
+/// Always measures quality metrics (SSIM, PSNR, VMAF if available).
+pub async fn run_quality_benchmark(
+    app: &AppHandle,
+    state: &AppState,
+    config: QualityBenchmarkConfig,
+    data_dir: PathBuf,
+) -> Result<BenchmarkRun, AppError> {
+    let ffmpeg_path = {
+        let guard = state.ffmpeg_path.lock().unwrap();
+        guard
+            .clone()
+            .ok_or_else(|| AppError::FfmpegNotFound("FFmpeg path not set".into()))?
+    };
+
+    let ffmpeg_version = {
+        let guard = state.ffmpeg_version.lock().unwrap();
+        guard.clone().unwrap_or_else(|| "Unknown".into())
+    };
+
+    let has_libvmaf = ffmpeg::check_libvmaf_support(&ffmpeg_path).await;
+
+    {
+        let mut cancel = state.benchmark_cancel.lock().unwrap();
+        *cancel = false;
+    }
+
+    let source = PathBuf::from(&config.source_path);
+    if !source.exists() {
+        return Err(AppError::Io(format!("Source file not found: {}", config.source_path)));
+    }
+
+    // Probe source video
+    let (width, height, _fps, duration, total_frames) =
+        ffmpeg::probe_video(&ffmpeg_path, &source).await?;
+
+    let resolution = Resolution {
+        width,
+        height,
+        label: format!("{}x{}", width, height),
+    };
+
+    let run_id = uuid::Uuid::new_v4().to_string();
+    let timestamp = chrono::Utc::now().to_rfc3339();
+    let system_info = crate::services::system::collect_system_info();
+
+    let encodes_dir = data_dir.join("encodes").join(&run_id);
+    std::fs::create_dir_all(&encodes_dir)?;
+
+    let mut jobs: Vec<(EncoderDef, QualityPreset)> = Vec::new();
+    for enc in &config.encoders {
+        for preset in &config.presets {
+            jobs.push((enc.clone(), preset.clone()));
+        }
+    }
+
+    let total_steps = jobs.len() as u32;
+    let mut results: Vec<BenchmarkResult> = Vec::new();
+
+    for (step, (enc, preset)) in jobs.iter().enumerate() {
+        {
+            let cancel = state.benchmark_cancel.lock().unwrap();
+            if *cancel {
+                return Err(AppError::Cancelled);
+            }
+        }
+
+        let step_num = (step + 1) as u32;
+
+        let _ = app.emit(
+            "benchmark-progress",
+            BenchmarkProgress {
+                current_encoder: enc.display_name.clone(),
+                current_preset: preset.to_string(),
+                current_resolution: resolution.label.clone(),
+                step: step_num,
+                total_steps,
+                encoding_fps: None,
+                elapsed_ms: 0,
+                phase: "encoding".into(),
+            },
+        );
+
+        let ext = encoder::output_extension(&enc.codec_family);
+        let output_filename = format!(
+            "{}_{}_{}.{}",
+            enc.name,
+            preset.to_string().to_lowercase(),
+            resolution.label.to_lowercase(),
+            ext
+        );
+        let output_path = encodes_dir.join(&output_filename);
+
+        let encode_args = encoder::build_encode_args(enc, preset);
+        let ffmpeg_args_str = encode_args.join(" ");
+
+        let app_clone = app.clone();
+        let enc_display = enc.display_name.clone();
+        let preset_str = preset.to_string();
+        let res_label = resolution.label.clone();
+
+        let (encoding_time_ms, output_size_bytes, encoding_fps) = ffmpeg::run_encode(
+            &ffmpeg_path,
+            &source,
+            &output_path,
+            &encode_args,
+            total_frames,
+            move |current_fps| {
+                let _ = app_clone.emit(
+                    "benchmark-progress",
+                    BenchmarkProgress {
+                        current_encoder: enc_display.clone(),
+                        current_preset: preset_str.clone(),
+                        current_resolution: res_label.clone(),
+                        step: step_num,
+                        total_steps,
+                        encoding_fps: Some(current_fps),
+                        elapsed_ms: 0,
+                        phase: "encoding".into(),
+                    },
+                );
+            },
+        )
+        .await?;
+
+        // Always measure quality in quality benchmark mode
+        let _ = app.emit(
+            "benchmark-progress",
+            BenchmarkProgress {
+                current_encoder: enc.display_name.clone(),
+                current_preset: preset.to_string(),
+                current_resolution: resolution.label.clone(),
+                step: step_num,
+                total_steps,
+                encoding_fps: None,
+                elapsed_ms: 0,
+                phase: "measuring_quality".into(),
+            },
+        );
+
+        let quality = metrics::calculate_quality_metrics(
+            &ffmpeg_path,
+            &source,
+            &output_path,
+            has_libvmaf,
+        )
+        .await
+        .unwrap_or_default();
+
+        results.push(BenchmarkResult {
+            id: uuid::Uuid::new_v4().to_string(),
+            run_id: run_id.clone(),
+            encoder: enc.clone(),
+            preset: preset.clone(),
+            resolution: resolution.clone(),
+            encoding_time_ms,
+            encoding_fps,
+            output_size_bytes,
+            vmaf: quality.vmaf,
+            ssim: quality.ssim,
+            psnr: quality.psnr,
+            ffmpeg_args: ffmpeg_args_str,
+        });
+    }
+
+    let _ = app.emit(
+        "benchmark-progress",
+        BenchmarkProgress {
+            current_encoder: "".into(),
+            current_preset: "".into(),
+            current_resolution: "".into(),
+            step: total_steps,
+            total_steps,
+            encoding_fps: None,
+            elapsed_ms: 0,
+            phase: "complete".into(),
+        },
+    );
+
+    // Clean up encoded files
+    let _ = std::fs::remove_dir_all(&encodes_dir);
+
+    let run = BenchmarkRun {
+        id: run_id,
+        timestamp,
+        system_info,
+        ffmpeg_version,
+        results,
+        source_duration_sec: duration.ceil() as u32,
+        source_resolution: resolution,
     };
 
     Ok(run)

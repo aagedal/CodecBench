@@ -23,44 +23,57 @@ pub async fn calculate_quality_metrics(
 ) -> Result<QualityMetrics, AppError> {
     let mut metrics = QualityMetrics::default();
 
-    // PSNR + SSIM in one pass
-    let output = Command::new(ffmpeg_path)
+    // SSIM — separate pass for reliability
+    let ssim_output = Command::new(ffmpeg_path)
         .args(["-i"])
         .arg(encoded_path)
         .args(["-i"])
         .arg(reference_path)
         .args([
-            "-lavfi",
-            "ssim;[0:v][1:v]psnr",
-            "-f",
-            "null",
-            "-",
+            "-filter_complex",
+            "[0:v][1:v]ssim",
+            "-f", "null", "-",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .await
-        .map_err(|e| AppError::FfmpegExecution(format!("Quality metrics failed: {}", e)))?;
+        .map_err(|e| AppError::FfmpegExecution(format!("SSIM calculation failed: {}", e)))?;
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    // Parse SSIM: "SSIM Y:0.987654 ..."  or "All:0.987654"
-    let ssim_re = Regex::new(r"SSIM.*All:(\d+\.\d+)").unwrap();
-    if let Some(caps) = ssim_re.captures(&stderr) {
+    let ssim_stderr = String::from_utf8_lossy(&ssim_output.stderr);
+    let ssim_re = Regex::new(r"All:(\d+\.\d+)").unwrap();
+    if let Some(caps) = ssim_re.captures(&ssim_stderr) {
         if let Some(m) = caps.get(1) {
             metrics.ssim = m.as_str().parse().ok();
         }
     }
 
-    // Parse PSNR: "PSNR ... average:46.123"
-    let psnr_re = Regex::new(r"PSNR.*average:(\d+\.\d+)").unwrap();
-    if let Some(caps) = psnr_re.captures(&stderr) {
+    // PSNR — separate pass
+    let psnr_output = Command::new(ffmpeg_path)
+        .args(["-i"])
+        .arg(encoded_path)
+        .args(["-i"])
+        .arg(reference_path)
+        .args([
+            "-filter_complex",
+            "[0:v][1:v]psnr",
+            "-f", "null", "-",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| AppError::FfmpegExecution(format!("PSNR calculation failed: {}", e)))?;
+
+    let psnr_stderr = String::from_utf8_lossy(&psnr_output.stderr);
+    let psnr_re = Regex::new(r"average:(\d+\.\d+)").unwrap();
+    if let Some(caps) = psnr_re.captures(&psnr_stderr) {
         if let Some(m) = caps.get(1) {
             metrics.psnr = m.as_str().parse().ok();
         }
     }
 
-    // VMAF in a separate pass (requires libvmaf)
+    // VMAF — requires libvmaf compiled into ffmpeg
     if has_libvmaf {
         let vmaf_output = Command::new(ffmpeg_path)
             .args(["-i"])
@@ -68,11 +81,9 @@ pub async fn calculate_quality_metrics(
             .args(["-i"])
             .arg(reference_path)
             .args([
-                "-lavfi",
-                "libvmaf",
-                "-f",
-                "null",
-                "-",
+                "-filter_complex",
+                "[0:v][1:v]libvmaf",
+                "-f", "null", "-",
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -82,8 +93,8 @@ pub async fn calculate_quality_metrics(
 
         let vmaf_stderr = String::from_utf8_lossy(&vmaf_output.stderr);
 
-        // Parse VMAF score: "VMAF score: 95.123" or "VMAF score = 95.123"
-        let vmaf_re = Regex::new(r"VMAF score[=:]\s*(\d+\.?\d*)").unwrap();
+        // Try multiple VMAF output formats
+        let vmaf_re = Regex::new(r"(?:VMAF score[=:]\s*|VMAF Mean:\s*)(\d+\.?\d*)").unwrap();
         if let Some(caps) = vmaf_re.captures(&vmaf_stderr) {
             if let Some(m) = caps.get(1) {
                 metrics.vmaf = m.as_str().parse().ok();

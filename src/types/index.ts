@@ -74,6 +74,12 @@ export interface BenchmarkRunSummary {
   resolutions: string[];
 }
 
+export interface QualityBenchmarkConfig {
+  source_path: string;
+  encoders: EncoderDef[];
+  presets: QualityPreset[];
+}
+
 export interface BenchmarkProgress {
   current_encoder: string;
   current_preset: string;

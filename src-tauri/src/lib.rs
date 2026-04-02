@@ -44,6 +44,7 @@ pub fn run() {
             commands::ffmpeg::set_ffmpeg_path,
             commands::ffmpeg::get_available_encoders,
             commands::benchmark::start_benchmark,
+            commands::benchmark::start_quality_benchmark,
             commands::benchmark::cancel_benchmark,
             commands::database::get_benchmark_runs,
             commands::database::get_benchmark_run,

@@ -5,6 +5,7 @@ import type {
   BenchmarkRunSummary,
   EncoderDef,
   FfmpegInfo,
+  QualityBenchmarkConfig,
   SystemInfo,
 } from "../types";
 
@@ -18,6 +19,9 @@ export const getAvailableEncoders = () =>
 
 export const startBenchmark = (config: BenchmarkConfig) =>
   invoke<BenchmarkRun>("start_benchmark", { config });
+
+export const startQualityBenchmark = (config: QualityBenchmarkConfig) =>
+  invoke<BenchmarkRun>("start_quality_benchmark", { config });
 
 export const cancelBenchmark = () => invoke("cancel_benchmark");
 

@@ -142,3 +142,11 @@ pub struct BenchmarkProgress {
     pub elapsed_ms: u64,
     pub phase: String,
 }
+
+/// Config for quality benchmark mode — user provides a source clip
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QualityBenchmarkConfig {
+    pub source_path: String,
+    pub encoders: Vec<EncoderDef>,
+    pub presets: Vec<QualityPreset>,
+}

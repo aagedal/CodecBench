@@ -6,6 +6,7 @@ import BenchmarkRunPage from "./pages/BenchmarkRunPage";
 import ResultsPage from "./pages/ResultsPage";
 import HistoryPage from "./pages/HistoryPage";
 import ComparePage from "./pages/ComparePage";
+import QualityBenchmarkPage from "./pages/QualityBenchmarkPage";
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
       <Route path="/" element={<Layout />}>
         <Route index element={<SetupPage />} />
         <Route path="benchmark" element={<BenchmarkConfigPage />} />
+        <Route path="quality" element={<QualityBenchmarkPage />} />
         <Route path="benchmark/run" element={<BenchmarkRunPage />} />
         <Route path="results/:id" element={<ResultsPage />} />
         <Route path="history" element={<HistoryPage />} />
