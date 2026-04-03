@@ -1,12 +1,13 @@
 use crate::models::{CodecFamily, EncoderDef, EncoderType, QualityPreset};
 
 /// Build the ffmpeg encoding arguments for a given encoder + preset combination.
+/// `crf` overrides the default quality for software encoders that use CRF.
 /// Returns the args to place between `-i input` and `-y output`.
-pub fn build_encode_args(encoder: &EncoderDef, preset: &QualityPreset) -> Vec<String> {
+pub fn build_encode_args(encoder: &EncoderDef, preset: &QualityPreset, crf: Option<u32>) -> Vec<String> {
     match (&encoder.encoder_type, &encoder.codec_family, encoder.name.as_str()) {
         // ── Software encoders ──────────────────────────────────────────
 
-        // libx264: CRF 23, varying preset speed
+        // libx264: CRF 23 default, varying preset speed
         (EncoderType::Software, CodecFamily::H264, "libx264") => {
             let speed = match preset {
                 QualityPreset::Fast => "ultrafast",
@@ -16,12 +17,12 @@ pub fn build_encode_args(encoder: &EncoderDef, preset: &QualityPreset) -> Vec<St
             vec![
                 "-c:v".into(), "libx264".into(),
                 "-preset".into(), speed.into(),
-                "-crf".into(), "23".into(),
+                "-crf".into(), crf.unwrap_or(23).to_string(),
                 "-an".into(),
             ]
         }
 
-        // libx265: CRF 28, varying preset speed
+        // libx265: CRF 28 default, varying preset speed
         (EncoderType::Software, CodecFamily::H265, "libx265") => {
             let speed = match preset {
                 QualityPreset::Fast => "ultrafast",
@@ -31,12 +32,12 @@ pub fn build_encode_args(encoder: &EncoderDef, preset: &QualityPreset) -> Vec<St
             vec![
                 "-c:v".into(), "libx265".into(),
                 "-preset".into(), speed.into(),
-                "-crf".into(), "28".into(),
+                "-crf".into(), crf.unwrap_or(28).to_string(),
                 "-an".into(),
             ]
         }
 
-        // SVT-AV1: CRF 30, numeric presets (higher = faster)
+        // SVT-AV1: CRF 30 default, numeric presets (higher = faster)
         (EncoderType::Software, CodecFamily::AV1, "libsvtav1") => {
             let speed = match preset {
                 QualityPreset::Fast => "10",
@@ -46,12 +47,12 @@ pub fn build_encode_args(encoder: &EncoderDef, preset: &QualityPreset) -> Vec<St
             vec![
                 "-c:v".into(), "libsvtav1".into(),
                 "-preset".into(), speed.into(),
-                "-crf".into(), "30".into(),
+                "-crf".into(), crf.unwrap_or(30).to_string(),
                 "-an".into(),
             ]
         }
 
-        // libaom-av1: CRF 30, cpu-used (higher = faster)
+        // libaom-av1: CRF 30 default, cpu-used (higher = faster)
         (EncoderType::Software, CodecFamily::AV1, "libaom-av1") => {
             let speed = match preset {
                 QualityPreset::Fast => "8",
@@ -61,7 +62,7 @@ pub fn build_encode_args(encoder: &EncoderDef, preset: &QualityPreset) -> Vec<St
             vec![
                 "-c:v".into(), "libaom-av1".into(),
                 "-cpu-used".into(), speed.into(),
-                "-crf".into(), "30".into(),
+                "-crf".into(), crf.unwrap_or(30).to_string(),
                 "-an".into(),
             ]
         }
@@ -304,9 +305,12 @@ mod tests {
             encoder_type: EncoderType::Software,
             display_name: "H.264 (x264)".into(),
         };
-        let args = build_encode_args(&enc, &QualityPreset::Fast);
+        let args = build_encode_args(&enc, &QualityPreset::Fast, None);
         assert!(args.contains(&"ultrafast".to_string()));
-        assert!(args.contains(&"23".to_string()));
+        assert!(args.contains(&"23".to_string())); // default CRF
+
+        let args_custom = build_encode_args(&enc, &QualityPreset::Fast, Some(18));
+        assert!(args_custom.contains(&"18".to_string()));
     }
 
     #[test]
@@ -317,9 +321,9 @@ mod tests {
             encoder_type: EncoderType::Software,
             display_name: "AV1 (SVT-AV1)".into(),
         };
-        let args = build_encode_args(&enc, &QualityPreset::High);
+        let args = build_encode_args(&enc, &QualityPreset::High, None);
         assert!(args.contains(&"2".to_string())); // preset 2
-        assert!(args.contains(&"30".to_string())); // crf 30
+        assert!(args.contains(&"30".to_string())); // default crf
     }
 
     #[test]
@@ -330,8 +334,8 @@ mod tests {
             encoder_type: EncoderType::Software,
             display_name: "ProRes".into(),
         };
-        let fast = build_encode_args(&enc, &QualityPreset::Fast);
-        let high = build_encode_args(&enc, &QualityPreset::High);
+        let fast = build_encode_args(&enc, &QualityPreset::Fast, None);
+        let high = build_encode_args(&enc, &QualityPreset::High, None);
         assert!(fast.contains(&"0".to_string()));  // Proxy
         assert!(high.contains(&"3".to_string()));  // HQ
     }

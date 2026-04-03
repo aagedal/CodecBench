@@ -103,6 +103,7 @@ pub struct BenchmarkRun {
     pub results: Vec<BenchmarkResult>,
     pub source_duration_sec: u32,
     pub source_resolution: Resolution,
+    pub crf: Option<u32>,              // CRF used for software encoders (quality mode only)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +117,7 @@ pub struct BenchmarkRunSummary {
     pub source_file: Option<String>,
     pub result_count: u32,
     pub resolutions: Vec<String>,
+    pub crf: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,4 +157,5 @@ pub struct QualityBenchmarkConfig {
     pub source_path: String,
     pub encoders: Vec<EncoderDef>,
     pub presets: Vec<QualityPreset>,
+    pub crf: u32,
 }

@@ -18,6 +18,7 @@ function QualityBenchmarkPage() {
     new Set(["Fast", "Medium", "High"]),
   );
   const [sourcePath, setSourcePath] = useState<string | null>(null);
+  const [crf, setCrf] = useState<number>(23);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -85,6 +86,7 @@ function QualityBenchmarkPage() {
       source_path: sourcePath,
       encoders: encoders.filter((e) => selectedEncoders.has(e.name)),
       presets: PRESETS.filter((p) => selectedPresets.has(p)),
+      crf,
     };
     startQuality(config);
     navigate("/benchmark/run");
@@ -238,6 +240,35 @@ function QualityBenchmarkPage() {
               {preset}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* CRF */}
+      <div className="bg-surface-900 rounded-xl border border-surface-700 p-5">
+        <h3 className="text-sm font-semibold text-surface-300 uppercase tracking-wider mb-1">
+          CRF
+        </h3>
+        <p className="text-xs text-surface-500 mb-3">
+          Constant Rate Factor for software encoders (libx264/x265/SVT-AV1/libaom).
+          Lower = higher quality &amp; larger files. Typical range: 18–35.
+        </p>
+        <div className="flex items-center gap-4">
+          <input
+            type="range"
+            min={0}
+            max={63}
+            value={crf}
+            onChange={(e) => setCrf(Number(e.target.value))}
+            className="flex-1 accent-blue-500"
+          />
+          <input
+            type="number"
+            min={0}
+            max={63}
+            value={crf}
+            onChange={(e) => setCrf(Math.max(0, Math.min(63, Number(e.target.value))))}
+            className="w-16 px-2 py-1 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white text-center"
+          />
         </div>
       </div>
 

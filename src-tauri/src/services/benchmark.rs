@@ -126,7 +126,7 @@ pub async fn run_benchmark(
         );
         let output_path = encodes_dir.join(&output_filename);
 
-        let encode_args = encoder::build_encode_args(enc, preset);
+        let encode_args = encoder::build_encode_args(enc, preset, None);
         let ffmpeg_args_str = encode_args.join(" ");
 
         let app_clone = app.clone();
@@ -240,6 +240,7 @@ pub async fn run_benchmark(
         results,
         source_duration_sec,
         source_resolution: first_res,
+        crf: None,
     };
 
     Ok(run)
@@ -338,7 +339,7 @@ pub async fn run_quality_benchmark(
         );
         let output_path = encodes_dir.join(&output_filename);
 
-        let encode_args = encoder::build_encode_args(enc, preset);
+        let encode_args = encoder::build_encode_args(enc, preset, Some(config.crf));
         let ffmpeg_args_str = encode_args.join(" ");
 
         let app_clone = app.clone();
@@ -443,6 +444,7 @@ pub async fn run_quality_benchmark(
         results,
         source_duration_sec: duration.ceil() as u32,
         source_resolution: resolution,
+        crf: Some(config.crf),
     };
 
     Ok(run)

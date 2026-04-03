@@ -27,6 +27,7 @@ pub fn run_from_row(row: &Row) -> rusqlite::Result<BenchmarkRun> {
             height: row.get("source_resolution_h")?,
             label: row.get("source_resolution_label")?,
         },
+        crf: row.get("crf")?,
     })
 }
 
@@ -95,5 +96,6 @@ pub fn summary_from_row(row: &Row) -> rusqlite::Result<BenchmarkRunSummary> {
         source_file: row.get("source_file")?,
         result_count: row.get("result_count")?,
         resolutions: Vec::new(), // populated separately
+        crf: row.get("crf")?,
     })
 }

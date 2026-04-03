@@ -22,6 +22,7 @@ function TrendsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedCpu, setSelectedCpu] = useState<string | null>(null);
   const [modeFilter, setModeFilter] = useState<ModeFilter>("speed");
+  const [selectedCrf, setSelectedCrf] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -42,13 +43,32 @@ function TrendsPage() {
     load();
   }, []);
 
-  // Load full runs for the selected CPU + mode
+  // When mode or CPU changes, reset CRF selection to the most recent CRF for quality mode
+  useEffect(() => {
+    if (modeFilter === "quality" && selectedCpu) {
+      const crfs = [
+        ...new Set(
+          summaries
+            .filter((s) => s.cpu_name === selectedCpu && s.benchmark_mode === "quality")
+            .map((s) => s.crf)
+            .filter((c): c is number => c != null),
+        ),
+      ].sort((a, b) => a - b);
+      setSelectedCrf(crfs.length > 0 ? crfs[0] : null);
+    } else {
+      setSelectedCrf(null);
+    }
+  }, [modeFilter, selectedCpu, summaries]);
+
+  // Load full runs for the selected CPU + mode (+ CRF for quality)
   useEffect(() => {
     if (!selectedCpu) return;
     const cpuRuns = summaries
-      .filter(
-        (s) => s.cpu_name === selectedCpu && s.benchmark_mode === modeFilter,
-      )
+      .filter((s) => {
+        if (s.cpu_name !== selectedCpu || s.benchmark_mode !== modeFilter) return false;
+        if (modeFilter === "quality") return s.crf === selectedCrf;
+        return true;
+      })
       .map((s) => s.id);
 
     if (cpuRuns.length === 0) {
@@ -59,18 +79,32 @@ function TrendsPage() {
     getRunsForComparison(cpuRuns)
       .then(setRuns)
       .catch(console.error);
-  }, [selectedCpu, modeFilter, summaries]);
+  }, [selectedCpu, modeFilter, selectedCrf, summaries]);
 
   const cpuNames = useMemo(
     () => [...new Set(summaries.map((s) => s.cpu_name))],
     [summaries],
   );
 
-  const filteredCount = summaries.filter(
-    (s) => s.cpu_name === selectedCpu && s.benchmark_mode === modeFilter,
-  ).length;
+  const availableCrfs = useMemo(() => {
+    if (!selectedCpu || modeFilter !== "quality") return [];
+    return [
+      ...new Set(
+        summaries
+          .filter((s) => s.cpu_name === selectedCpu && s.benchmark_mode === "quality")
+          .map((s) => s.crf)
+          .filter((c): c is number => c != null),
+      ),
+    ].sort((a, b) => a - b);
+  }, [selectedCpu, modeFilter, summaries]);
 
-  // Count per mode for the selected CPU
+  const filteredCount = summaries.filter((s) => {
+    if (s.cpu_name !== selectedCpu || s.benchmark_mode !== modeFilter) return false;
+    if (modeFilter === "quality") return s.crf === selectedCrf;
+    return true;
+  }).length;
+
+  // Count per mode for the selected CPU (quality count is total, not CRF-filtered, for the tab badge)
   const speedCount = summaries.filter(
     (s) => s.cpu_name === selectedCpu && s.benchmark_mode === "speed",
   ).length;
@@ -194,6 +228,36 @@ function TrendsPage() {
         </div>
       </div>
 
+      {/* CRF Selector (quality mode only) */}
+      {modeFilter === "quality" && availableCrfs.length > 0 && (
+        <div className="bg-surface-900 rounded-xl border border-surface-700 p-5">
+          <h3 className="text-sm font-semibold text-surface-300 uppercase tracking-wider mb-3">
+            CRF
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {availableCrfs.map((c) => {
+              const count = summaries.filter(
+                (s) => s.cpu_name === selectedCpu && s.benchmark_mode === "quality" && s.crf === c,
+              ).length;
+              return (
+                <button
+                  key={c}
+                  onClick={() => setSelectedCrf(c)}
+                  className={`px-3 py-2 rounded-lg text-sm transition-colors ${
+                    selectedCrf === c
+                      ? "bg-blue-600 text-white"
+                      : "bg-surface-800 text-surface-400 hover:text-surface-200"
+                  }`}
+                >
+                  CRF {c}
+                  <span className="ml-2 opacity-60">({count})</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {filteredCount < 2 ? (
         <div className="bg-surface-900 rounded-xl border border-surface-700 p-8 text-center">
           <p className="text-surface-400">
@@ -277,6 +341,9 @@ function TrendsPage() {
                   <th className="text-left p-3 text-surface-400 font-medium">
                     Source
                   </th>
+                  {modeFilter === "quality" && (
+                    <th className="text-right p-3 text-surface-400 font-medium">CRF</th>
+                  )}
                   <th className="text-right p-3 text-surface-400 font-medium">
                     Encodes
                   </th>
@@ -308,6 +375,11 @@ function TrendsPage() {
                       <td className="p-3 text-surface-300 text-xs">
                         {run.source_file ?? "synthetic (testsrc2)"}
                       </td>
+                      {modeFilter === "quality" && (
+                        <td className="p-3 text-right text-surface-300 text-xs">
+                          {run.crf ?? "—"}
+                        </td>
+                      )}
                       <td className="p-3 text-right text-surface-200">
                         {run.results.length}
                       </td>

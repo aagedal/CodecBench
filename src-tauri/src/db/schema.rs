@@ -76,5 +76,12 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
         )?;
     }
 
+    let has_crf: bool = conn
+        .prepare("SELECT crf FROM benchmark_runs LIMIT 0")
+        .is_ok();
+    if !has_crf {
+        conn.execute_batch("ALTER TABLE benchmark_runs ADD COLUMN crf INTEGER;")?;
+    }
+
     Ok(())
 }

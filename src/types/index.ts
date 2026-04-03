@@ -66,6 +66,7 @@ export interface BenchmarkRun {
   results: BenchmarkResult[];
   source_duration_sec: number;
   source_resolution: Resolution;
+  crf: number | null;
 }
 
 export interface BenchmarkRunSummary {
@@ -78,12 +79,14 @@ export interface BenchmarkRunSummary {
   source_file: string | null;
   result_count: number;
   resolutions: string[];
+  crf: number | null;
 }
 
 export interface QualityBenchmarkConfig {
   source_path: string;
   encoders: EncoderDef[];
   presets: QualityPreset[];
+  crf: number;
 }
 
 export interface BenchmarkProgress {

@@ -181,9 +181,18 @@ function SetupPage() {
               </div>
             )}
 
-            {ffmpegInfo.has_libvmaf && (
+            {ffmpegInfo.has_libvmaf ? (
               <p className="text-xs text-emerald-400">
                 VMAF quality metrics available
+              </p>
+            ) : (
+              <p className="text-xs text-amber-400">
+                VMAF not available — this ffmpeg was built without{" "}
+                <span className="font-mono">--enable-libvmaf</span>.
+                SSIM and PSNR will still be measured. To enable VMAF, install a
+                build that includes libvmaf (e.g.{" "}
+                <span className="font-mono">brew install ffmpeg --HEAD</span> or
+                a static build from ffmpeg.org).
               </p>
             )}
           </div>

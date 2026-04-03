@@ -247,6 +247,9 @@ function ResultsPage() {
           <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-900/30 text-amber-400">
             Quality
           </span>
+          {run.crf != null && (
+            <span className="text-xs text-surface-400">CRF {run.crf}</span>
+          )}
         </div>
       )}
 
@@ -511,8 +514,11 @@ function ResultsPage() {
                   key={r.id}
                   className="border-b border-surface-800 hover:bg-surface-800/50"
                 >
-                  <td className="p-3 text-white">
-                    {r.encoder.display_name}
+                  <td className="p-3">
+                    <span className="text-white">{r.encoder.display_name}</span>
+                    <p className="text-xs font-mono text-surface-500 mt-0.5 whitespace-nowrap">
+                      {r.ffmpeg_args}
+                    </p>
                   </td>
                   <td className="p-3">
                     <span
