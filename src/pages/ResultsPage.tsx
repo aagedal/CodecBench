@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart,
@@ -11,9 +11,10 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { getBenchmarkRun, exportJson, revealInFileManager, rerunQualityMetrics } from "../lib/tauri";
+import { onBenchmarkProgress } from "../lib/events";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
-import type { BenchmarkRun, QualityMetricsConfig } from "../types";
+import type { BenchmarkProgress, BenchmarkRun, QualityMetricsConfig } from "../types";
 import {
   formatDuration,
   formatFileSize,
@@ -32,8 +33,9 @@ function ResultsPage() {
   const [loading, setLoading] = useState(!run);
   const [rerunOpen, setRerunOpen] = useState(false);
   const [rerunRunning, setRerunRunning] = useState(false);
+  const [rerunProgress, setRerunProgress] = useState<BenchmarkProgress | null>(null);
   const [rerunMetrics, setRerunMetrics] = useState<QualityMetricsConfig>({
-    ssim: true, psnr: true, vmaf: true, xpsnr: false, ssimu2: false,
+    ssim: false, psnr: false, vmaf: false, xpsnr: false, ssimu2: false,
   });
   const [rerunSourceOverride, setRerunSourceOverride] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -148,9 +150,11 @@ function ResultsPage() {
     if (selected) setRerunSourceOverride(selected as string);
   };
 
-  const handleRerun = async () => {
+  const handleRerun = useCallback(async () => {
     if (!run) return;
     setRerunRunning(true);
+    setRerunProgress(null);
+    const unlisten = await onBenchmarkProgress(setRerunProgress);
     try {
       const sourceOverride = rerunSourceOverride ?? undefined;
       const updated = await rerunQualityMetrics(run.id, rerunMetrics, sourceOverride);
@@ -161,9 +165,11 @@ function ResultsPage() {
       console.error("Rerun failed:", e);
       alert(`Rerun failed: ${e}`);
     } finally {
+      unlisten();
       setRerunRunning(false);
+      setRerunProgress(null);
     }
-  };
+  }, [run, rerunMetrics, rerunSourceOverride]);
 
   // Build chart data: group by encoder, bars for each preset
   const encoderNames = [
@@ -250,7 +256,20 @@ function ResultsPage() {
           {run.output_dir && (
             <>
               <button
-                onClick={() => setRerunOpen(true)}
+                onClick={() => {
+                  // Default to only metrics that are missing from all results
+                  const results = run.results;
+                  setRerunMetrics({
+                    ssim: results.every((r) => r.ssim == null),
+                    psnr: results.every((r) => r.psnr == null),
+                    vmaf: results.every((r) => r.vmaf == null),
+                    xpsnr: results.every((r) => r.xpsnr == null),
+                    ssimu2: results.every((r) => r.ssimu2 == null),
+                  });
+                  setRerunSourceOverride(null);
+                  setRerunProgress(null);
+                  setRerunOpen(true);
+                }}
                 className="px-3 py-1.5 bg-amber-900/30 hover:bg-amber-900/50 border border-amber-700/50 rounded-lg text-xs text-amber-400 transition-colors"
               >
                 Rerun Metrics
@@ -625,70 +644,116 @@ function ResultsPage() {
           <div className="bg-surface-900 border border-surface-700 rounded-xl p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold text-white mb-2">Rerun Quality Metrics</h3>
             <p className="text-sm text-surface-400 mb-4">
-              Re-measure quality metrics on the existing encoded files. Does not re-encode.
+              Re-measure metrics on the existing encoded files. Does not re-encode.
+              Already-computed metrics are unchecked by default.
             </p>
-            <div className="grid grid-cols-2 gap-2 mb-5">
-              {(
-                [
-                  { key: "ssim", label: "SSIM" },
-                  { key: "psnr", label: "PSNR" },
-                  { key: "vmaf", label: "VMAF" },
-                  { key: "xpsnr", label: "XPSNR" },
-                  { key: "ssimu2", label: "SSIMULACRA2" },
-                ] as { key: keyof QualityMetricsConfig; label: string }[]
-              ).map(({ key, label }) => (
-                <label
-                  key={key}
-                  className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer transition-colors ${
-                    rerunMetrics[key]
-                      ? "bg-blue-600/10 border border-blue-500/30"
-                      : "bg-surface-800 border border-surface-700"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={rerunMetrics[key]}
-                    onChange={() => setRerunMetrics((p) => ({ ...p, [key]: !p[key] }))}
-                    className="rounded border-surface-600"
-                  />
-                  <span className="text-sm text-white">{label}</span>
-                </label>
-              ))}
-            </div>
-            {!run.source_full_path && (
-              <div className="mb-4">
-                <p className="text-xs text-amber-400 mb-2">
-                  Source path not recorded for this run. Select the original source file:
-                </p>
-                <button
-                  onClick={handleRerunSourcePick}
-                  className="w-full py-2 border border-dashed border-surface-600 rounded-lg text-xs text-surface-400 hover:border-surface-500 hover:text-surface-300 transition-colors"
-                >
-                  {rerunSourceOverride
-                    ? rerunSourceOverride.split(/[/\\]/).pop()
-                    : "Select source video..."}
-                </button>
+
+            {!rerunRunning && (
+              <>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {(
+                    [
+                      { key: "ssim", label: "SSIM" },
+                      { key: "psnr", label: "PSNR" },
+                      { key: "vmaf", label: "VMAF" },
+                      { key: "xpsnr", label: "XPSNR" },
+                      { key: "ssimu2", label: "SSIMULACRA2" },
+                    ] as { key: keyof QualityMetricsConfig; label: string }[]
+                  ).map(({ key, label }) => {
+                    const alreadyHas = run.results.some((r) => r[key] != null);
+                    return (
+                      <label
+                        key={key}
+                        className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer transition-colors ${
+                          rerunMetrics[key]
+                            ? "bg-blue-600/10 border border-blue-500/30"
+                            : "bg-surface-800 border border-surface-700"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={rerunMetrics[key]}
+                          onChange={() => setRerunMetrics((p) => ({ ...p, [key]: !p[key] }))}
+                          className="rounded border-surface-600"
+                        />
+                        <div>
+                          <span className="text-sm text-white">{label}</span>
+                          {alreadyHas && (
+                            <span className="ml-1.5 text-xs text-surface-500">has data</span>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {!run.source_full_path && (
+                  <div className="mb-4">
+                    <p className="text-xs text-amber-400 mb-2">
+                      Source path not recorded for this run. Select the original source file:
+                    </p>
+                    <button
+                      onClick={handleRerunSourcePick}
+                      className="w-full py-2 border border-dashed border-surface-600 rounded-lg text-xs text-surface-400 hover:border-surface-500 hover:text-surface-300 transition-colors"
+                    >
+                      {rerunSourceOverride
+                        ? rerunSourceOverride.split(/[/\\]/).pop()
+                        : "Select source video..."}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {rerunRunning && (
+              <div className="mb-4 space-y-2">
+                {rerunProgress ? (
+                  <>
+                    <div className="flex items-center gap-2 text-sm text-surface-300">
+                      <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                      <span className="truncate">
+                        {rerunProgress.current_encoder} — {rerunProgress.current_preset}
+                      </span>
+                    </div>
+                    <div className="w-full bg-surface-800 rounded-full h-1.5">
+                      <div
+                        className="bg-amber-500 h-1.5 rounded-full transition-all"
+                        style={{ width: `${rerunProgress.total_steps > 0 ? (rerunProgress.step / rerunProgress.total_steps) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-surface-500">
+                      {rerunProgress.step} / {rerunProgress.total_steps}
+                    </p>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-surface-400">
+                    <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                    Starting...
+                  </div>
+                )}
               </div>
             )}
+
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setRerunOpen(false)}
                 disabled={rerunRunning}
-                className="px-4 py-2 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-sm transition-colors"
+                className="px-4 py-2 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-sm transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
-              <button
-                onClick={handleRerun}
-                disabled={
-                  rerunRunning ||
-                  !Object.values(rerunMetrics).some(Boolean) ||
-                  (!run.source_full_path && !rerunSourceOverride)
-                }
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-surface-700 disabled:text-surface-500 rounded-lg text-sm text-white font-medium transition-colors"
-              >
-                {rerunRunning ? "Running..." : "Run Metrics"}
-              </button>
+              {!rerunRunning && (
+                <button
+                  onClick={handleRerun}
+                  disabled={
+                    !Object.values(rerunMetrics).some(Boolean) ||
+                    (!run.source_full_path && !rerunSourceOverride)
+                  }
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-surface-700 disabled:text-surface-500 rounded-lg text-sm text-white font-medium transition-colors"
+                >
+                  Run Metrics
+                </button>
+              )}
             </div>
           </div>
         </div>
