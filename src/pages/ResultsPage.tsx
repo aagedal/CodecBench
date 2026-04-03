@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { getBenchmarkRun, exportJson, revealInFileManager, rerunQualityMetrics } from "../lib/tauri";
-import { save } from "@tauri-apps/plugin-dialog";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import type { BenchmarkRun, QualityMetricsConfig } from "../types";
 import {
@@ -35,6 +35,7 @@ function ResultsPage() {
   const [rerunMetrics, setRerunMetrics] = useState<QualityMetricsConfig>({
     ssim: true, psnr: true, vmaf: true, xpsnr: false, ssimu2: false,
   });
+  const [rerunSourceOverride, setRerunSourceOverride] = useState<string | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -138,13 +139,24 @@ function ResultsPage() {
     );
   }
 
+  const handleRerunSourcePick = async () => {
+    const selected = await open({
+      multiple: false,
+      title: "Select Original Source Video",
+      filters: [{ name: "Video Files", extensions: ["mp4","mkv","mov","avi","webm","y4m","mxf","ts","m4v","flv","wmv","mpg","mpeg"] }],
+    });
+    if (selected) setRerunSourceOverride(selected as string);
+  };
+
   const handleRerun = async () => {
     if (!run) return;
     setRerunRunning(true);
     try {
-      const updated = await rerunQualityMetrics(run.id, rerunMetrics);
+      const sourceOverride = rerunSourceOverride ?? undefined;
+      const updated = await rerunQualityMetrics(run.id, rerunMetrics, sourceOverride);
       setRun(updated);
       setRerunOpen(false);
+      setRerunSourceOverride(null);
     } catch (e) {
       console.error("Rerun failed:", e);
       alert(`Rerun failed: ${e}`);
@@ -644,9 +656,19 @@ function ResultsPage() {
               ))}
             </div>
             {!run.source_full_path && (
-              <p className="text-xs text-amber-400 mb-3">
-                Source path not available (older run). Rerun may fail if source has moved.
-              </p>
+              <div className="mb-4">
+                <p className="text-xs text-amber-400 mb-2">
+                  Source path not recorded for this run. Select the original source file:
+                </p>
+                <button
+                  onClick={handleRerunSourcePick}
+                  className="w-full py-2 border border-dashed border-surface-600 rounded-lg text-xs text-surface-400 hover:border-surface-500 hover:text-surface-300 transition-colors"
+                >
+                  {rerunSourceOverride
+                    ? rerunSourceOverride.split(/[/\\]/).pop()
+                    : "Select source video..."}
+                </button>
+              </div>
             )}
             <div className="flex gap-2 justify-end">
               <button
@@ -658,7 +680,11 @@ function ResultsPage() {
               </button>
               <button
                 onClick={handleRerun}
-                disabled={rerunRunning || !Object.values(rerunMetrics).some(Boolean)}
+                disabled={
+                  rerunRunning ||
+                  !Object.values(rerunMetrics).some(Boolean) ||
+                  (!run.source_full_path && !rerunSourceOverride)
+                }
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-surface-700 disabled:text-surface-500 rounded-lg text-sm text-white font-medium transition-colors"
               >
                 {rerunRunning ? "Running..." : "Run Metrics"}

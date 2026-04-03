@@ -64,8 +64,9 @@ pub async fn cancel_benchmark(state: State<'_, AppState>) -> Result<(), AppError
 pub async fn rerun_quality_metrics(
     run_id: String,
     metrics: QualityMetricsConfig,
+    source_override: Option<String>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<BenchmarkRun, AppError> {
-    benchmark_service::rerun_quality_metrics(&app, &state, run_id, metrics).await
+    benchmark_service::rerun_quality_metrics(&app, &state, run_id, metrics, source_override).await
 }

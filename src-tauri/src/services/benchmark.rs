@@ -472,6 +472,7 @@ pub async fn rerun_quality_metrics(
     state: &AppState,
     run_id: String,
     metrics_config: crate::models::QualityMetricsConfig,
+    source_override: Option<String>,
 ) -> Result<crate::models::BenchmarkRun, AppError> {
     let ffmpeg_path = {
         let guard = state.ffmpeg_path.lock().unwrap();
@@ -492,9 +493,10 @@ pub async fn rerun_quality_metrics(
         return Err(AppError::Io("Can only re-run metrics on quality benchmark runs".into()));
     }
 
-    let source_path = run.source_full_path.as_ref()
+    let source_path = source_override
+        .or_else(|| run.source_full_path.clone())
         .ok_or_else(|| AppError::Io("Source path not available for this run".into()))?;
-    let source = PathBuf::from(source_path);
+    let source = PathBuf::from(&source_path);
     if !source.exists() {
         return Err(AppError::Io(format!("Source file not found: {}", source_path)));
     }
