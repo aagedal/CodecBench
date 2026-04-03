@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getBenchmarkRuns, deleteBenchmarkRun } from "../lib/tauri";
+import { getBenchmarkRuns, deleteBenchmarkRun, exportAllRuns, importRuns } from "../lib/tauri";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import type { BenchmarkRunSummary } from "../types";
 import { formatDate } from "../utils/format";
 
@@ -53,6 +55,38 @@ function HistoryPage() {
     navigate(`/compare?ids=${ids.join(",")}`);
   };
 
+  const handleExportAll = async () => {
+    try {
+      const json = await exportAllRuns();
+      const path = await save({
+        defaultPath: "codecbench_export.json",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (path) {
+        await writeTextFile(path, json);
+      }
+    } catch (e) {
+      console.error("Export failed:", e);
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      const path = await open({
+        filters: [{ name: "JSON", extensions: ["json"] }],
+        multiple: false,
+      });
+      if (!path) return;
+      const json = await readTextFile(path as string);
+      const result = await importRuns(json);
+      await loadRuns();
+      alert(`Import complete: ${result.added} added, ${result.skipped} already existed.`);
+    } catch (e) {
+      console.error("Import failed:", e);
+      alert("Import failed. Make sure the file is a valid CodecBench export.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-surface-400">
@@ -70,14 +104,28 @@ function HistoryPage() {
             {runs.length} saved benchmark run{runs.length !== 1 ? "s" : ""}
           </p>
         </div>
-        {selectedIds.size >= 2 && (
+        <div className="flex gap-2">
           <button
-            onClick={handleCompare}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm text-white transition-colors"
+            onClick={handleImport}
+            className="px-3 py-1.5 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-xs transition-colors"
           >
-            Compare Selected ({selectedIds.size})
+            Import
           </button>
-        )}
+          <button
+            onClick={handleExportAll}
+            className="px-3 py-1.5 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-xs transition-colors"
+          >
+            Export All
+          </button>
+          {selectedIds.size >= 2 && (
+            <button
+              onClick={handleCompare}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm text-white transition-colors"
+            >
+              Compare Selected ({selectedIds.size})
+            </button>
+          )}
+        </div>
       </div>
 
       {runs.length === 0 ? (

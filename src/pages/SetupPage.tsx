@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
-import { detectFfmpeg, setFfmpegPath, getSystemInfo } from "../lib/tauri";
+import { detectFfmpeg, setFfmpegPath, getSystemInfo, getEncodeRetention, setEncodeRetention } from "../lib/tauri";
 import type { FfmpegInfo, SystemInfo } from "../types";
 
 function SetupPage() {
@@ -10,12 +10,20 @@ function SetupPage() {
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detecting, setDetecting] = useState(true);
+  const [retention, setRetention] = useState<number>(30);
 
   useEffect(() => {
     const init = async () => {
       try {
         const sysInfo = await getSystemInfo();
         setSystemInfo(sysInfo);
+      } catch {
+        // Non-critical
+      }
+
+      try {
+        const days = await getEncodeRetention();
+        setRetention(days);
       } catch {
         // Non-critical
       }
@@ -34,6 +42,15 @@ function SetupPage() {
     };
     init();
   }, []);
+
+  const handleRetentionChange = async (days: number) => {
+    setRetention(days);
+    try {
+      await setEncodeRetention(days);
+    } catch (e) {
+      console.error("Failed to save retention setting:", e);
+    }
+  };
 
   const handleBrowse = async () => {
     const selected = await open({
@@ -184,6 +201,48 @@ function SetupPage() {
         >
           Browse for FFmpeg...
         </button>
+      </div>
+
+      {/* Encoded Files */}
+      <div className="bg-surface-900 rounded-xl border border-surface-700 p-5">
+        <h3 className="text-sm font-semibold text-surface-300 uppercase tracking-wider mb-3">
+          Encoded Files
+        </h3>
+        <p className="text-xs text-surface-400 mb-3">
+          Quality benchmark runs keep encoded files on disk for video comparison.
+          Auto-delete them after:
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { label: "1 day", days: 1 },
+            { label: "7 days", days: 7 },
+            { label: "1 month", days: 30 },
+            { label: "Never", days: 0 },
+          ].map(({ label, days }) => (
+            <button
+              key={days}
+              onClick={() => handleRetentionChange(days)}
+              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                retention === days
+                  ? "bg-blue-600 border-blue-500 text-white"
+                  : "bg-surface-800 border-surface-600 text-surface-300 hover:border-surface-500"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {retention > 0 && (
+          <p className="mt-2 text-xs text-surface-500">
+            Encoded files older than {retention === 1 ? "1 day" : retention === 7 ? "7 days" : "1 month"} are deleted at startup.
+            Benchmark results and metrics are always kept.
+          </p>
+        )}
+        {retention === 0 && (
+          <p className="mt-2 text-xs text-surface-500">
+            Encoded files are never deleted automatically.
+          </p>
+        )}
       </div>
 
       {/* Continue Button */}

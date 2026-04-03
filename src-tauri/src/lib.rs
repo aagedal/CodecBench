@@ -9,6 +9,38 @@ use state::AppState;
 use std::sync::Mutex;
 use tauri::Manager;
 
+/// Delete encoded file directories that are older than the configured retention period.
+/// Nulls out the output_dir / output_file DB references so the run data is preserved.
+fn cleanup_old_encodes(conn: &rusqlite::Connection) {
+    let retention_days: i64 = db::queries::get_setting(conn, "encode_retention_days")
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
+
+    if retention_days == 0 {
+        return; // "Never" — skip cleanup
+    }
+
+    let runs = match db::queries::get_quality_runs_with_output_dir(conn) {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days);
+
+    for (run_id, timestamp, output_dir) in runs {
+        let run_time = match chrono::DateTime::parse_from_rfc3339(&timestamp) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if run_time < cutoff {
+            let _ = std::fs::remove_dir_all(&output_dir);
+            let _ = db::queries::clear_run_output_files(conn, &run_id);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -29,6 +61,7 @@ pub fn run() {
             conn.execute_batch("PRAGMA foreign_keys = ON;")
                 .expect("Failed to enable foreign keys");
             db::schema::run_migrations(&conn).expect("Failed to run migrations");
+            cleanup_old_encodes(&conn);
 
             app.manage(AppState {
                 db: Mutex::new(conn),
@@ -52,7 +85,11 @@ pub fn run() {
             commands::database::get_runs_for_comparison,
             commands::system::get_system_info,
             commands::export::export_json,
+            commands::export::export_all_runs,
+            commands::export::import_runs,
             commands::export::reveal_in_file_manager,
+            commands::settings::get_encode_retention,
+            commands::settings::set_encode_retention,
         ])
         .run(tauri::generate_context!())
         .expect("error while running CodecBench");

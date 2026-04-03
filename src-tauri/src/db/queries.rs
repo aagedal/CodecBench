@@ -141,3 +141,54 @@ pub fn get_runs_for_comparison(
     }
     Ok(runs)
 }
+
+pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>, AppError> {
+    match conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| row.get(0)) {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(AppError::Database(e.to_string())),
+    }
+}
+
+pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), AppError> {
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)", [key, value])?;
+    Ok(())
+}
+
+/// Returns (id, timestamp, output_dir) for quality runs that still have an output directory.
+pub fn get_quality_runs_with_output_dir(conn: &Connection) -> Result<Vec<(String, String, String)>, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, timestamp, output_dir FROM benchmark_runs
+         WHERE benchmark_mode = 'quality' AND output_dir IS NOT NULL",
+    )?;
+    let rows: Vec<(String, String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(rows)
+}
+
+/// Remove the output_dir/output_file references from a run (after deleting the files on disk).
+pub fn clear_run_output_files(conn: &Connection, run_id: &str) -> Result<(), AppError> {
+    conn.execute("UPDATE benchmark_runs SET output_dir = NULL WHERE id = ?1", [run_id])?;
+    conn.execute("UPDATE benchmark_results SET output_file = NULL WHERE run_id = ?1", [run_id])?;
+    Ok(())
+}
+
+pub fn run_exists(conn: &Connection, id: &str) -> Result<bool, AppError> {
+    let count: u32 = conn.query_row(
+        "SELECT COUNT(*) FROM benchmark_runs WHERE id = ?1",
+        [id],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+pub fn get_all_runs_full(conn: &Connection) -> Result<Vec<BenchmarkRun>, AppError> {
+    let summaries = get_all_runs(conn)?;
+    let mut runs = Vec::new();
+    for summary in summaries {
+        runs.push(get_run(conn, &summary.id)?);
+    }
+    Ok(runs)
+}

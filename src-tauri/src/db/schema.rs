@@ -5,6 +5,11 @@ use crate::error::AppError;
 pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
     conn.execute_batch(
         "
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS benchmark_runs (
             id TEXT PRIMARY KEY,
             timestamp TEXT NOT NULL,

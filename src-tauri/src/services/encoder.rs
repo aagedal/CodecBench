@@ -282,11 +282,13 @@ pub fn build_encode_args(encoder: &EncoderDef, preset: &QualityPreset) -> Vec<St
     }
 }
 
-/// Determine the output file extension for a given codec family
+/// Determine the output file extension for a given codec family.
+/// Use mp4 for H.264/H.265/AV1 (required for AV1 on macOS WebView; broad support).
+/// Use mov for ProRes (natural Apple container).
 pub fn output_extension(codec_family: &CodecFamily) -> &'static str {
     match codec_family {
         CodecFamily::ProRes => "mov",
-        _ => "mkv",
+        _ => "mp4",
     }
 }
 
@@ -337,6 +339,7 @@ mod tests {
     #[test]
     fn test_prores_uses_mov_extension() {
         assert_eq!(output_extension(&CodecFamily::ProRes), "mov");
-        assert_eq!(output_extension(&CodecFamily::H264), "mkv");
+        assert_eq!(output_extension(&CodecFamily::H264), "mp4");
+        assert_eq!(output_extension(&CodecFamily::AV1), "mp4");
     }
 }

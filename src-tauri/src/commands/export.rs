@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use serde::Serialize;
 use tauri::State;
 
 use crate::db::queries;
@@ -15,6 +16,40 @@ pub async fn export_json(
     let run = queries::get_run(&db, &run_id)?;
     let json = serde_json::to_string_pretty(&run)?;
     Ok(json)
+}
+
+#[tauri::command]
+pub async fn export_all_runs(state: State<'_, AppState>) -> Result<String, AppError> {
+    let db = state.db.lock().unwrap();
+    let runs = queries::get_all_runs_full(&db)?;
+    let json = serde_json::to_string_pretty(&runs)?;
+    Ok(json)
+}
+
+#[derive(Serialize)]
+pub struct ImportResult {
+    pub added: usize,
+    pub skipped: usize,
+}
+
+#[tauri::command]
+pub async fn import_runs(
+    json_str: String,
+    state: State<'_, AppState>,
+) -> Result<ImportResult, AppError> {
+    let runs: Vec<crate::models::BenchmarkRun> = serde_json::from_str(&json_str)?;
+    let db = state.db.lock().unwrap();
+    let mut added = 0;
+    let mut skipped = 0;
+    for run in runs {
+        if queries::run_exists(&db, &run.id)? {
+            skipped += 1;
+        } else {
+            queries::insert_run(&db, &run)?;
+            added += 1;
+        }
+    }
+    Ok(ImportResult { added, skipped })
 }
 
 #[tauri::command]

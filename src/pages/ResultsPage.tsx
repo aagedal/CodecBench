@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams, useLocation } from "react-router-dom";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart,
   Bar,
@@ -25,6 +25,7 @@ import { PRESET_COLORS } from "../utils/colors";
 function ResultsPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
   const [run, setRun] = useState<BenchmarkRun | null>(
     (location.state as { run?: BenchmarkRun })?.run ?? null,
   );
@@ -215,12 +216,20 @@ function ResultsPage() {
             PDF
           </button>
           {run.output_dir && (
-            <button
-              onClick={() => revealInFileManager(run.output_dir!)}
-              className="px-3 py-1.5 bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-700/50 rounded-lg text-xs text-emerald-400 transition-colors"
-            >
-              Open Encodes
-            </button>
+            <>
+              <button
+                onClick={() => navigate(`/video-compare/${run.id}`)}
+                className="px-3 py-1.5 bg-violet-900/30 hover:bg-violet-900/50 border border-violet-700/50 rounded-lg text-xs text-violet-400 transition-colors"
+              >
+                Video Compare
+              </button>
+              <button
+                onClick={() => revealInFileManager(run.output_dir!)}
+                className="px-3 py-1.5 bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-700/50 rounded-lg text-xs text-emerald-400 transition-colors"
+              >
+                Open Encodes
+              </button>
+            </>
           )}
         </div>
       </div>

@@ -8,6 +8,7 @@ import HistoryPage from "./pages/HistoryPage";
 import ComparePage from "./pages/ComparePage";
 import QualityBenchmarkPage from "./pages/QualityBenchmarkPage";
 import TrendsPage from "./pages/TrendsPage";
+import VideoComparePage from "./pages/VideoComparePage";
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
         <Route path="history" element={<HistoryPage />} />
         <Route path="compare" element={<ComparePage />} />
         <Route path="trends" element={<TrendsPage />} />
+        <Route path="video-compare/:id" element={<VideoComparePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
