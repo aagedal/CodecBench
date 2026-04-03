@@ -34,8 +34,18 @@ export interface BenchmarkResult {
   vmaf: number | null;
   ssim: number | null;
   psnr: number | null;
+  xpsnr: number | null;
+  ssimu2: number | null;
   ffmpeg_args: string;
   output_file: string | null;
+}
+
+export interface QualityMetricsConfig {
+  vmaf: boolean;
+  ssim: boolean;
+  psnr: boolean;
+  xpsnr: boolean;
+  ssimu2: boolean;
 }
 
 export interface SystemInfo {
@@ -62,6 +72,7 @@ export interface BenchmarkRun {
   ffmpeg_version: string;
   benchmark_mode: "speed" | "quality";
   source_file: string | null;
+  source_full_path: string | null;
   output_dir: string | null;
   results: BenchmarkResult[];
   source_duration_sec: number;
@@ -87,6 +98,7 @@ export interface QualityBenchmarkConfig {
   encoders: EncoderDef[];
   presets: QualityPreset[];
   crf: number;
+  metrics: QualityMetricsConfig;
 }
 
 export interface BenchmarkProgress {

@@ -158,7 +158,7 @@ pub async fn run_benchmark(
         )
         .await?;
 
-        // Quality metrics (optional)
+        // Quality metrics (optional, speed benchmark uses SSIM/PSNR/VMAF only)
         let quality = if config.enable_quality_metrics {
             let _ = app.emit(
                 "benchmark-progress",
@@ -174,11 +174,17 @@ pub async fn run_benchmark(
                 },
             );
 
+            let speed_metrics_config = crate::models::QualityMetricsConfig {
+                vmaf: true, ssim: true, psnr: true, xpsnr: false, ssimu2: false,
+            };
             metrics::calculate_quality_metrics(
                 &ffmpeg_path,
                 &source_path,
                 &output_path,
                 has_libvmaf,
+                &speed_metrics_config,
+                res.width,
+                res.height,
             )
             .await
             .unwrap_or_default()
@@ -198,6 +204,8 @@ pub async fn run_benchmark(
             vmaf: quality.vmaf,
             ssim: quality.ssim,
             psnr: quality.psnr,
+            xpsnr: quality.xpsnr,
+            ssimu2: quality.ssimu2,
             ffmpeg_args: ffmpeg_args_str,
             output_file: None,
         };
@@ -236,6 +244,7 @@ pub async fn run_benchmark(
         ffmpeg_version,
         benchmark_mode: "speed".into(),
         source_file: None,
+        source_full_path: None,
         output_dir: None,
         results,
         source_duration_sec,
@@ -391,6 +400,9 @@ pub async fn run_quality_benchmark(
             &source,
             &output_path,
             has_libvmaf,
+            &config.metrics,
+            resolution.width,
+            resolution.height,
         )
         .await
         .unwrap_or_default();
@@ -407,6 +419,8 @@ pub async fn run_quality_benchmark(
             vmaf: quality.vmaf,
             ssim: quality.ssim,
             psnr: quality.psnr,
+            xpsnr: quality.xpsnr,
+            ssimu2: quality.ssimu2,
             ffmpeg_args: ffmpeg_args_str,
             output_file: Some(output_path.to_string_lossy().to_string()),
         });
@@ -440,6 +454,7 @@ pub async fn run_quality_benchmark(
         ffmpeg_version,
         benchmark_mode: "quality".into(),
         source_file: source_filename,
+        source_full_path: Some(config.source_path.clone()),
         output_dir: Some(encodes_dir.to_string_lossy().to_string()),
         results,
         source_duration_sec: duration.ceil() as u32,
@@ -448,6 +463,132 @@ pub async fn run_quality_benchmark(
     };
 
     Ok(run)
+}
+
+/// Re-run quality metrics on existing encoded files for a quality benchmark run.
+/// Returns the updated BenchmarkRun with refreshed metric values.
+pub async fn rerun_quality_metrics(
+    app: &AppHandle,
+    state: &AppState,
+    run_id: String,
+    metrics_config: crate::models::QualityMetricsConfig,
+) -> Result<crate::models::BenchmarkRun, AppError> {
+    let ffmpeg_path = {
+        let guard = state.ffmpeg_path.lock().unwrap();
+        guard
+            .clone()
+            .ok_or_else(|| AppError::FfmpegNotFound("FFmpeg path not set".into()))?
+    };
+
+    let has_libvmaf = ffmpeg::check_libvmaf_support(&ffmpeg_path).await;
+
+    // Load the run from DB
+    let run = {
+        let db = state.db.lock().unwrap();
+        crate::db::queries::get_run(&db, &run_id)?
+    };
+
+    if run.benchmark_mode != "quality" {
+        return Err(AppError::Io("Can only re-run metrics on quality benchmark runs".into()));
+    }
+
+    let source_path = run.source_full_path.as_ref()
+        .ok_or_else(|| AppError::Io("Source path not available for this run".into()))?;
+    let source = PathBuf::from(source_path);
+    if !source.exists() {
+        return Err(AppError::Io(format!("Source file not found: {}", source_path)));
+    }
+
+    let output_dir = run.output_dir.as_ref()
+        .ok_or_else(|| AppError::Io("Encoded files have been deleted for this run".into()))?;
+
+    let total_steps = run.results.len() as u32;
+    let width = run.source_resolution.width;
+    let height = run.source_resolution.height;
+
+    for (step, result) in run.results.iter().enumerate() {
+        let output_file = result.output_file.as_ref()
+            .ok_or_else(|| AppError::Io(format!("No output file recorded for result {}", result.id)))?;
+
+        let output_path = PathBuf::from(output_file);
+        if !output_path.exists() {
+            // Try finding the file in the output_dir (in case path changed)
+            let filename = output_path.file_name()
+                .ok_or_else(|| AppError::Io("Invalid output file path".into()))?;
+            let alt_path = PathBuf::from(output_dir).join(filename);
+            if !alt_path.exists() {
+                return Err(AppError::Io(format!(
+                    "Encoded file not found: {}", output_file
+                )));
+            }
+        }
+
+        let step_num = (step + 1) as u32;
+        let _ = app.emit(
+            "benchmark-progress",
+            crate::models::BenchmarkProgress {
+                current_encoder: result.encoder.display_name.clone(),
+                current_preset: result.preset.to_string(),
+                current_resolution: result.resolution.label.clone(),
+                step: step_num,
+                total_steps,
+                encoding_fps: None,
+                elapsed_ms: 0,
+                phase: "measuring_quality".into(),
+            },
+        );
+
+        let output_path = if PathBuf::from(output_file).exists() {
+            PathBuf::from(output_file)
+        } else {
+            let filename = PathBuf::from(output_file).file_name().unwrap().to_owned();
+            PathBuf::from(output_dir).join(filename)
+        };
+
+        let quality = metrics::calculate_quality_metrics(
+            &ffmpeg_path,
+            &source,
+            &output_path,
+            has_libvmaf,
+            &metrics_config,
+            width,
+            height,
+        )
+        .await
+        .unwrap_or_default();
+
+        let db = state.db.lock().unwrap();
+        crate::db::queries::update_result_metrics(
+            &db,
+            &result.id,
+            quality.vmaf,
+            quality.ssim,
+            quality.psnr,
+            quality.xpsnr,
+            quality.ssimu2,
+        )?;
+    }
+
+    let _ = app.emit(
+        "benchmark-progress",
+        crate::models::BenchmarkProgress {
+            current_encoder: "".into(),
+            current_preset: "".into(),
+            current_resolution: "".into(),
+            step: total_steps,
+            total_steps,
+            encoding_fps: None,
+            elapsed_ms: 0,
+            phase: "complete".into(),
+        },
+    );
+
+    // Return the updated run
+    let updated_run = {
+        let db = state.db.lock().unwrap();
+        crate::db::queries::get_run(&db, &run_id)?
+    };
+    Ok(updated_run)
 }
 
 fn source_path_for_resolution(sources_dir: &Path, res: &Resolution) -> PathBuf {

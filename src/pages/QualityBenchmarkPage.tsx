@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getAvailableEncoders } from "../lib/tauri";
 import { useBenchmark } from "../hooks/useBenchmark";
-import type { EncoderDef, QualityPreset, QualityBenchmarkConfig } from "../types";
+import type { EncoderDef, QualityPreset, QualityBenchmarkConfig, QualityMetricsConfig } from "../types";
 
 const PRESETS: QualityPreset[] = ["Fast", "Medium", "High"];
 
@@ -19,6 +19,9 @@ function QualityBenchmarkPage() {
   );
   const [sourcePath, setSourcePath] = useState<string | null>(null);
   const [crf, setCrf] = useState<number>(23);
+  const [metrics, setMetrics] = useState<QualityMetricsConfig>({
+    ssim: true, psnr: true, vmaf: true, xpsnr: false, ssimu2: false,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -80,6 +83,10 @@ function QualityBenchmarkPage() {
 
   const totalJobs = selectedEncoders.size * selectedPresets.size;
 
+  const toggleMetric = (key: keyof QualityMetricsConfig) => {
+    setMetrics((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   const handleStart = () => {
     if (!sourcePath) return;
     const config: QualityBenchmarkConfig = {
@@ -87,6 +94,7 @@ function QualityBenchmarkPage() {
       encoders: encoders.filter((e) => selectedEncoders.has(e.name)),
       presets: PRESETS.filter((p) => selectedPresets.has(p)),
       crf,
+      metrics,
     };
     startQuality(config);
     navigate("/benchmark/run");
@@ -269,6 +277,48 @@ function QualityBenchmarkPage() {
             onChange={(e) => setCrf(Math.max(0, Math.min(63, Number(e.target.value))))}
             className="w-16 px-2 py-1 bg-surface-800 border border-surface-600 rounded-lg text-sm text-white text-center"
           />
+        </div>
+      </div>
+
+      {/* Quality Metrics Selection */}
+      <div className="bg-surface-900 rounded-xl border border-surface-700 p-5">
+        <h3 className="text-sm font-semibold text-surface-300 uppercase tracking-wider mb-1">
+          Quality Metrics
+        </h3>
+        <p className="text-xs text-surface-500 mb-3">
+          Select which metrics to measure. SSIMULACRA2 and XPSNR are more accurate but slower.
+          VMAF requires a custom ffmpeg build with libvmaf.
+        </p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {(
+            [
+              { key: "ssim", label: "SSIM", note: "Fast" },
+              { key: "psnr", label: "PSNR", note: "Fast" },
+              { key: "vmaf", label: "VMAF", note: "Requires libvmaf" },
+              { key: "xpsnr", label: "XPSNR", note: "Extended PSNR" },
+              { key: "ssimu2", label: "SSIMULACRA2", note: "Slow, perceptual" },
+            ] as { key: keyof QualityMetricsConfig; label: string; note: string }[]
+          ).map(({ key, label, note }) => (
+            <label
+              key={key}
+              className={`flex items-start gap-2 p-3 rounded-lg cursor-pointer transition-colors ${
+                metrics[key]
+                  ? "bg-blue-600/10 border border-blue-500/30"
+                  : "bg-surface-800 border border-surface-700 hover:border-surface-600"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={metrics[key]}
+                onChange={() => toggleMetric(key)}
+                className="mt-0.5 rounded border-surface-600"
+              />
+              <div>
+                <p className="text-sm text-white">{label}</p>
+                <p className="text-xs text-surface-400">{note}</p>
+              </div>
+            </label>
+          ))}
         </div>
       </div>
 

@@ -83,5 +83,24 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
         conn.execute_batch("ALTER TABLE benchmark_runs ADD COLUMN crf INTEGER;")?;
     }
 
+    let has_source_full_path: bool = conn
+        .prepare("SELECT source_full_path FROM benchmark_runs LIMIT 0")
+        .is_ok();
+    if !has_source_full_path {
+        conn.execute_batch(
+            "ALTER TABLE benchmark_runs ADD COLUMN source_full_path TEXT;",
+        )?;
+    }
+
+    let has_xpsnr: bool = conn
+        .prepare("SELECT xpsnr FROM benchmark_results LIMIT 0")
+        .is_ok();
+    if !has_xpsnr {
+        conn.execute_batch(
+            "ALTER TABLE benchmark_results ADD COLUMN xpsnr REAL;
+             ALTER TABLE benchmark_results ADD COLUMN ssimu2 REAL;",
+        )?;
+    }
+
     Ok(())
 }

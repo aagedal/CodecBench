@@ -96,6 +96,12 @@ function VideoCard({
           {result.psnr != null && (
             <span>PSNR {result.psnr.toFixed(1)} dB</span>
           )}
+          {result.xpsnr != null && (
+            <span>XPSNR {result.xpsnr.toFixed(2)} dB</span>
+          )}
+          {result.ssimu2 != null && (
+            <span>SSIMULACRA2 {result.ssimu2.toFixed(2)}</span>
+          )}
         </div>
         <p className="mt-1 text-xs font-mono text-surface-600 truncate" title={result.ffmpeg_args}>
           {result.ffmpeg_args}
@@ -177,6 +183,8 @@ function SideBySidePlayer({
                   {result.vmaf != null && <span>VMAF {result.vmaf.toFixed(1)}</span>}
                   {result.ssim != null && <span>SSIM {(result.ssim * 100).toFixed(2)}%</span>}
                   {result.psnr != null && <span>PSNR {result.psnr.toFixed(1)} dB</span>}
+                  {result.xpsnr != null && <span>XPSNR {result.xpsnr.toFixed(2)} dB</span>}
+                  {result.ssimu2 != null && <span>SSIMULACRA2 {result.ssimu2.toFixed(2)}</span>}
                 </div>
                 <p className="mt-0.5 text-xs font-mono text-surface-600" title={result.ffmpeg_args}>
                   {result.ffmpeg_args}

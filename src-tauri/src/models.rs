@@ -87,6 +87,8 @@ pub struct BenchmarkResult {
     pub vmaf: Option<f64>,
     pub ssim: Option<f64>,
     pub psnr: Option<f64>,
+    pub xpsnr: Option<f64>,
+    pub ssimu2: Option<f64>,
     pub ffmpeg_args: String,
     pub output_file: Option<String>,   // path to encoded file (quality mode only)
 }
@@ -99,6 +101,7 @@ pub struct BenchmarkRun {
     pub ffmpeg_version: String,
     pub benchmark_mode: String,        // "speed" or "quality"
     pub source_file: Option<String>,   // filename for quality mode, None for speed (synthetic)
+    pub source_full_path: Option<String>, // full path to source video (quality mode only)
     pub output_dir: Option<String>,    // directory containing encoded files (quality mode only)
     pub results: Vec<BenchmarkResult>,
     pub source_duration_sec: u32,
@@ -151,6 +154,22 @@ pub struct BenchmarkProgress {
     pub phase: String,
 }
 
+/// Which quality metrics to compute in a quality benchmark run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QualityMetricsConfig {
+    pub vmaf: bool,
+    pub ssim: bool,
+    pub psnr: bool,
+    pub xpsnr: bool,
+    pub ssimu2: bool,
+}
+
+impl Default for QualityMetricsConfig {
+    fn default() -> Self {
+        Self { vmaf: true, ssim: true, psnr: true, xpsnr: false, ssimu2: false }
+    }
+}
+
 /// Config for quality benchmark mode — user provides a source clip
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QualityBenchmarkConfig {
@@ -158,4 +177,5 @@ pub struct QualityBenchmarkConfig {
     pub encoders: Vec<EncoderDef>,
     pub presets: Vec<QualityPreset>,
     pub crf: u32,
+    pub metrics: QualityMetricsConfig,
 }

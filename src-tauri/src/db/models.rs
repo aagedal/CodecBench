@@ -19,6 +19,7 @@ pub fn run_from_row(row: &Row) -> rusqlite::Result<BenchmarkRun> {
         ffmpeg_version: row.get("ffmpeg_version")?,
         benchmark_mode: row.get("benchmark_mode")?,
         source_file: row.get("source_file")?,
+        source_full_path: row.get("source_full_path")?,
         output_dir: row.get("output_dir")?,
         results: Vec::new(),
         source_duration_sec: row.get("source_duration_sec")?,
@@ -79,6 +80,8 @@ pub fn result_from_row(row: &Row) -> rusqlite::Result<BenchmarkResult> {
         vmaf: row.get("vmaf")?,
         ssim: row.get("ssim")?,
         psnr: row.get("psnr")?,
+        xpsnr: row.get("xpsnr")?,
+        ssimu2: row.get("ssimu2")?,
         ffmpeg_args: row.get("ffmpeg_args")?,
         output_file: row.get("output_file")?,
     })

@@ -13,8 +13,8 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
             id, timestamp, cpu_name, cpu_cores, cpu_threads, ram_gb,
             os, os_version, gpu, ffmpeg_version,
             source_duration_sec, source_resolution_w, source_resolution_h,
-            source_resolution_label, benchmark_mode, source_file, output_dir, crf
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            source_resolution_label, benchmark_mode, source_file, source_full_path, output_dir, crf
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
         rusqlite::params![
             run.id,
             run.timestamp,
@@ -32,6 +32,7 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
             run.source_resolution.label,
             run.benchmark_mode,
             run.source_file,
+            run.source_full_path,
             run.output_dir,
             run.crf,
         ],
@@ -44,8 +45,8 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
                 codec_family, encoder_type, preset,
                 resolution_w, resolution_h, resolution_label,
                 encoding_time_ms, encoding_fps, output_size_bytes,
-                vmaf, ssim, psnr, ffmpeg_args, output_file
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                vmaf, ssim, psnr, xpsnr, ssimu2, ffmpeg_args, output_file
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
             rusqlite::params![
                 result.id,
                 result.run_id,
@@ -63,6 +64,8 @@ pub fn insert_run(conn: &Connection, run: &BenchmarkRun) -> Result<(), AppError>
                 result.vmaf,
                 result.ssim,
                 result.psnr,
+                result.xpsnr,
+                result.ssimu2,
                 result.ffmpeg_args,
                 result.output_file,
             ],
@@ -173,6 +176,22 @@ pub fn get_quality_runs_with_output_dir(conn: &Connection) -> Result<Vec<(String
 pub fn clear_run_output_files(conn: &Connection, run_id: &str) -> Result<(), AppError> {
     conn.execute("UPDATE benchmark_runs SET output_dir = NULL WHERE id = ?1", [run_id])?;
     conn.execute("UPDATE benchmark_results SET output_file = NULL WHERE run_id = ?1", [run_id])?;
+    Ok(())
+}
+
+pub fn update_result_metrics(
+    conn: &Connection,
+    result_id: &str,
+    vmaf: Option<f64>,
+    ssim: Option<f64>,
+    psnr: Option<f64>,
+    xpsnr: Option<f64>,
+    ssimu2: Option<f64>,
+) -> Result<(), AppError> {
+    conn.execute(
+        "UPDATE benchmark_results SET vmaf=?2, ssim=?3, psnr=?4, xpsnr=?5, ssimu2=?6 WHERE id=?1",
+        rusqlite::params![result_id, vmaf, ssim, psnr, xpsnr, ssimu2],
+    )?;
     Ok(())
 }
 

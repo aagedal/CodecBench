@@ -6,6 +6,7 @@ import type {
   EncoderDef,
   FfmpegInfo,
   QualityBenchmarkConfig,
+  QualityMetricsConfig,
   SystemInfo,
 } from "../types";
 
@@ -59,3 +60,6 @@ export const getEncodeRetention = () => invoke<number>("get_encode_retention");
 
 export const setEncodeRetention = (days: number) =>
   invoke("set_encode_retention", { days });
+
+export const rerunQualityMetrics = (runId: string, metrics: QualityMetricsConfig) =>
+  invoke<BenchmarkRun>("rerun_quality_metrics", { runId, metrics });

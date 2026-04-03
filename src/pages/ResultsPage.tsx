@@ -10,10 +10,10 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { getBenchmarkRun, exportJson, revealInFileManager } from "../lib/tauri";
+import { getBenchmarkRun, exportJson, revealInFileManager, rerunQualityMetrics } from "../lib/tauri";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
-import type { BenchmarkRun } from "../types";
+import type { BenchmarkRun, QualityMetricsConfig } from "../types";
 import {
   formatDuration,
   formatFileSize,
@@ -30,6 +30,11 @@ function ResultsPage() {
     (location.state as { run?: BenchmarkRun })?.run ?? null,
   );
   const [loading, setLoading] = useState(!run);
+  const [rerunOpen, setRerunOpen] = useState(false);
+  const [rerunRunning, setRerunRunning] = useState(false);
+  const [rerunMetrics, setRerunMetrics] = useState<QualityMetricsConfig>({
+    ssim: true, psnr: true, vmaf: true, xpsnr: false, ssimu2: false,
+  });
   const resultsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -133,6 +138,21 @@ function ResultsPage() {
     );
   }
 
+  const handleRerun = async () => {
+    if (!run) return;
+    setRerunRunning(true);
+    try {
+      const updated = await rerunQualityMetrics(run.id, rerunMetrics);
+      setRun(updated);
+      setRerunOpen(false);
+    } catch (e) {
+      console.error("Rerun failed:", e);
+      alert(`Rerun failed: ${e}`);
+    } finally {
+      setRerunRunning(false);
+    }
+  };
+
   // Build chart data: group by encoder, bars for each preset
   const encoderNames = [
     ...new Set(run.results.map((r) => r.encoder.display_name)),
@@ -179,7 +199,7 @@ function ResultsPage() {
   });
 
   const hasQuality = run.results.some(
-    (r) => r.vmaf != null || r.ssim != null || r.psnr != null,
+    (r) => r.vmaf != null || r.ssim != null || r.psnr != null || r.xpsnr != null || r.ssimu2 != null,
   );
   const presets = [...new Set(run.results.map((r) => r.preset))];
 
@@ -217,6 +237,12 @@ function ResultsPage() {
           </button>
           {run.output_dir && (
             <>
+              <button
+                onClick={() => setRerunOpen(true)}
+                className="px-3 py-1.5 bg-amber-900/30 hover:bg-amber-900/50 border border-amber-700/50 rounded-lg text-xs text-amber-400 transition-colors"
+              >
+                Rerun Metrics
+              </button>
               <button
                 onClick={() => navigate(`/video-compare/${run.id}`)}
                 className="px-3 py-1.5 bg-violet-900/30 hover:bg-violet-900/50 border border-violet-700/50 rounded-lg text-xs text-violet-400 transition-colors"
@@ -399,6 +425,8 @@ function ResultsPage() {
         const hasSSIM = run.results.some((r) => r.ssim != null);
         const hasPSNR = run.results.some((r) => r.psnr != null);
         const hasVMAF = run.results.some((r) => r.vmaf != null);
+        const hasXPSNR = run.results.some((r) => r.xpsnr != null);
+        const hasSsimu2 = run.results.some((r) => r.ssimu2 != null);
 
         const vmafData = hasVMAF ? encoderNames.map((name) => {
           const entry: Record<string, string | number> = { name };
@@ -432,10 +460,10 @@ function ResultsPage() {
                 </ResponsiveContainer>
               </div>
             )}
-            {(hasSSIM || hasPSNR) && (
+            {(hasSSIM || hasPSNR || hasXPSNR || hasSsimu2) && (
               <div className="bg-surface-900 rounded-xl border border-surface-700 p-5">
                 <h3 className="text-sm font-semibold text-surface-300 mb-4">
-                  Quality Metrics{hasSSIM ? " — SSIM %" : ""}{hasPSNR ? " / PSNR dB" : ""}
+                  Quality Metrics
                 </h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -446,16 +474,20 @@ function ResultsPage() {
                         {hasSSIM && <th className="text-right p-2 text-surface-400 font-medium">SSIM</th>}
                         {hasPSNR && <th className="text-right p-2 text-surface-400 font-medium">PSNR (dB)</th>}
                         {hasVMAF && <th className="text-right p-2 text-surface-400 font-medium">VMAF</th>}
+                        {hasXPSNR && <th className="text-right p-2 text-surface-400 font-medium">XPSNR (dB)</th>}
+                        {hasSsimu2 && <th className="text-right p-2 text-surface-400 font-medium">SSIMULACRA2</th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {run.results.filter((r) => r.ssim != null || r.psnr != null || r.vmaf != null).map((r) => (
+                      {run.results.filter((r) => r.ssim != null || r.psnr != null || r.vmaf != null || r.xpsnr != null || r.ssimu2 != null).map((r) => (
                         <tr key={r.id} className="border-b border-surface-800">
                           <td className="p-2 text-white">{r.encoder.display_name}</td>
                           <td className="p-2 text-surface-300">{r.preset}</td>
                           {hasSSIM && <td className="p-2 text-right text-surface-200">{r.ssim != null ? (r.ssim * 100).toFixed(2) + "%" : "—"}</td>}
                           {hasPSNR && <td className="p-2 text-right text-surface-200">{r.psnr?.toFixed(1) ?? "—"}</td>}
                           {hasVMAF && <td className="p-2 text-right text-surface-200">{r.vmaf?.toFixed(1) ?? "—"}</td>}
+                          {hasXPSNR && <td className="p-2 text-right text-surface-200">{r.xpsnr?.toFixed(2) ?? "—"}</td>}
+                          {hasSsimu2 && <td className="p-2 text-right text-surface-200">{r.ssimu2?.toFixed(2) ?? "—"}</td>}
                         </tr>
                       ))}
                     </tbody>
@@ -488,19 +520,22 @@ function ResultsPage() {
                 <th className="text-right p-3 text-surface-400 font-medium">
                   Size
                 </th>
-                {hasQuality && (
-                  <>
-                    <th className="text-right p-3 text-surface-400 font-medium">
-                      VMAF
-                    </th>
-                    <th className="text-right p-3 text-surface-400 font-medium">
-                      SSIM
-                    </th>
-                    <th className="text-right p-3 text-surface-400 font-medium">
-                      PSNR
-                    </th>
-                  </>
-                )}
+                {hasQuality && (() => {
+                  const hasVMAFCol = run.results.some((r) => r.vmaf != null);
+                  const hasSSIMCol = run.results.some((r) => r.ssim != null);
+                  const hasPSNRCol = run.results.some((r) => r.psnr != null);
+                  const hasXPSNRCol = run.results.some((r) => r.xpsnr != null);
+                  const hasSsimu2Col = run.results.some((r) => r.ssimu2 != null);
+                  return (
+                    <>
+                      {hasVMAFCol && <th className="text-right p-3 text-surface-400 font-medium">VMAF</th>}
+                      {hasSSIMCol && <th className="text-right p-3 text-surface-400 font-medium">SSIM</th>}
+                      {hasPSNRCol && <th className="text-right p-3 text-surface-400 font-medium">PSNR</th>}
+                      {hasXPSNRCol && <th className="text-right p-3 text-surface-400 font-medium">XPSNR</th>}
+                      {hasSsimu2Col && <th className="text-right p-3 text-surface-400 font-medium">SSIMULACRA2</th>}
+                    </>
+                  );
+                })()}
                 {run.output_dir && (
                   <th className="text-right p-3 text-surface-400 font-medium">
                     File
@@ -540,19 +575,22 @@ function ResultsPage() {
                   <td className="p-3 text-right text-surface-200">
                     {formatFileSize(r.output_size_bytes)}
                   </td>
-                  {hasQuality && (
-                    <>
-                      <td className="p-3 text-right text-surface-200">
-                        {r.vmaf?.toFixed(1) ?? "—"}
-                      </td>
-                      <td className="p-3 text-right text-surface-200">
-                        {r.ssim?.toFixed(4) ?? "—"}
-                      </td>
-                      <td className="p-3 text-right text-surface-200">
-                        {r.psnr?.toFixed(1) ?? "—"}
-                      </td>
-                    </>
-                  )}
+                  {hasQuality && (() => {
+                    const hasVMAFCol = run.results.some((x) => x.vmaf != null);
+                    const hasSSIMCol = run.results.some((x) => x.ssim != null);
+                    const hasPSNRCol = run.results.some((x) => x.psnr != null);
+                    const hasXPSNRCol = run.results.some((x) => x.xpsnr != null);
+                    const hasSsimu2Col = run.results.some((x) => x.ssimu2 != null);
+                    return (
+                      <>
+                        {hasVMAFCol && <td className="p-3 text-right text-surface-200">{r.vmaf?.toFixed(1) ?? "—"}</td>}
+                        {hasSSIMCol && <td className="p-3 text-right text-surface-200">{r.ssim?.toFixed(4) ?? "—"}</td>}
+                        {hasPSNRCol && <td className="p-3 text-right text-surface-200">{r.psnr?.toFixed(1) ?? "—"}</td>}
+                        {hasXPSNRCol && <td className="p-3 text-right text-surface-200">{r.xpsnr?.toFixed(2) ?? "—"}</td>}
+                        {hasSsimu2Col && <td className="p-3 text-right text-surface-200">{r.ssimu2?.toFixed(2) ?? "—"}</td>}
+                      </>
+                    );
+                  })()}
                   {r.output_file && (
                     <td className="p-3 text-right">
                       <button
@@ -569,6 +607,66 @@ function ResultsPage() {
           </table>
         </div>
       </div>
+      {/* Rerun Metrics Modal */}
+      {rerunOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-surface-900 border border-surface-700 rounded-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-white mb-2">Rerun Quality Metrics</h3>
+            <p className="text-sm text-surface-400 mb-4">
+              Re-measure quality metrics on the existing encoded files. Does not re-encode.
+            </p>
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              {(
+                [
+                  { key: "ssim", label: "SSIM" },
+                  { key: "psnr", label: "PSNR" },
+                  { key: "vmaf", label: "VMAF" },
+                  { key: "xpsnr", label: "XPSNR" },
+                  { key: "ssimu2", label: "SSIMULACRA2" },
+                ] as { key: keyof QualityMetricsConfig; label: string }[]
+              ).map(({ key, label }) => (
+                <label
+                  key={key}
+                  className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer transition-colors ${
+                    rerunMetrics[key]
+                      ? "bg-blue-600/10 border border-blue-500/30"
+                      : "bg-surface-800 border border-surface-700"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={rerunMetrics[key]}
+                    onChange={() => setRerunMetrics((p) => ({ ...p, [key]: !p[key] }))}
+                    className="rounded border-surface-600"
+                  />
+                  <span className="text-sm text-white">{label}</span>
+                </label>
+              ))}
+            </div>
+            {!run.source_full_path && (
+              <p className="text-xs text-amber-400 mb-3">
+                Source path not available (older run). Rerun may fail if source has moved.
+              </p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setRerunOpen(false)}
+                disabled={rerunRunning}
+                className="px-4 py-2 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRerun}
+                disabled={rerunRunning || !Object.values(rerunMetrics).some(Boolean)}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-surface-700 disabled:text-surface-500 rounded-lg text-sm text-white font-medium transition-colors"
+              >
+                {rerunRunning ? "Running..." : "Run Metrics"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -79,6 +79,7 @@ pub fn run() {
             commands::benchmark::start_benchmark,
             commands::benchmark::start_quality_benchmark,
             commands::benchmark::cancel_benchmark,
+            commands::benchmark::rerun_quality_metrics,
             commands::database::get_benchmark_runs,
             commands::database::get_benchmark_run,
             commands::database::delete_benchmark_run,
