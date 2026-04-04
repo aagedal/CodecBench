@@ -38,7 +38,15 @@ function ResultsPage() {
     ssim: false, psnr: false, vmaf: false, xpsnr: false, ssimu2: false,
   });
   const [rerunSourceOverride, setRerunSourceOverride] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const exportStatusTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const resultsRef = useRef<HTMLDivElement>(null);
+
+  const showExportStatus = (ok: boolean, msg: string) => {
+    clearTimeout(exportStatusTimer.current);
+    setExportStatus({ ok, msg });
+    if (ok) exportStatusTimer.current = setTimeout(() => setExportStatus(null), 3000);
+  };
 
   useEffect(() => {
     if (!run && id) {
@@ -58,9 +66,10 @@ function ResultsPage() {
       });
       if (path) {
         await writeTextFile(path, json);
+        showExportStatus(true, "JSON saved");
       }
     } catch (e) {
-      console.error("Export failed:", e);
+      showExportStatus(false, `JSON export failed: ${e}`);
     }
   };
 
@@ -75,7 +84,7 @@ function ResultsPage() {
       const blob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, "image/png"),
       );
-      if (!blob) return;
+      if (!blob) throw new Error("Failed to render canvas");
 
       const path = await save({
         defaultPath: `codecbench_${run!.id.slice(0, 8)}.png`,
@@ -84,9 +93,10 @@ function ResultsPage() {
       if (path) {
         const arrayBuffer = await blob.arrayBuffer();
         await writeFile(path, new Uint8Array(arrayBuffer));
+        showExportStatus(true, "PNG saved");
       }
     } catch (e) {
-      console.error("PNG export failed:", e);
+      showExportStatus(false, `PNG export failed: ${e}`);
     }
   };
 
@@ -119,9 +129,10 @@ function ResultsPage() {
       if (path) {
         const arrayBuffer = await blob.arrayBuffer();
         await writeFile(path, new Uint8Array(arrayBuffer));
+        showExportStatus(true, "PDF saved");
       }
     } catch (e) {
-      console.error("PDF export failed:", e);
+      showExportStatus(false, `PDF export failed: ${e}`);
     }
   };
 
@@ -234,7 +245,12 @@ function ResultsPage() {
             {run.ffmpeg_version}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {exportStatus && (
+            <span className={`text-xs ${exportStatus.ok ? "text-emerald-400" : "text-red-400"}`}>
+              {exportStatus.msg}
+            </span>
+          )}
           <button
             onClick={handleExportJson}
             className="px-3 py-1.5 bg-surface-800 hover:bg-surface-700 border border-surface-600 rounded-lg text-xs transition-colors"
