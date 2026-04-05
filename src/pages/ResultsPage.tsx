@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart,
@@ -38,6 +38,7 @@ function ResultsPage() {
     ssim: false, psnr: false, vmaf: false, xpsnr: false, ssimu2: false,
   });
   const [rerunSourceOverride, setRerunSourceOverride] = useState<string | null>(null);
+  const [rerunSourceWarning, setRerunSourceWarning] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const exportStatusTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -47,6 +48,10 @@ function ResultsPage() {
     setExportStatus({ ok, msg });
     if (ok) exportStatusTimer.current = setTimeout(() => setExportStatus(null), 3000);
   };
+
+  useEffect(() => {
+    return () => clearTimeout(exportStatusTimer.current);
+  }, []);
 
   useEffect(() => {
     if (!run && id) {
@@ -136,29 +141,28 @@ function ResultsPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64 text-surface-400">
-        Loading results...
-      </div>
-    );
-  }
-
-  if (!run) {
-    return (
-      <div className="text-surface-400 text-center py-20">
-        Benchmark run not found
-      </div>
-    );
-  }
-
   const handleRerunSourcePick = async () => {
     const selected = await open({
       multiple: false,
       title: "Select Original Source Video",
       filters: [{ name: "Video Files", extensions: ["mp4","mkv","mov","avi","webm","y4m","mxf","ts","m4v","flv","wmv","mpg","mpeg"] }],
     });
-    if (selected) setRerunSourceOverride(selected as string);
+    if (selected) {
+      const path = selected as string;
+      setRerunSourceOverride(path);
+      if (run?.source_file) {
+        const pickedName = path.split(/[/\\]/).pop() ?? "";
+        if (pickedName !== run.source_file) {
+          setRerunSourceWarning(
+            `Selected "${pickedName}" but original source was "${run.source_file}". Make sure this is the correct file or metrics will be invalid.`
+          );
+        } else {
+          setRerunSourceWarning(null);
+        }
+      } else {
+        setRerunSourceWarning(null);
+      }
+    }
   };
 
   const handleRerun = useCallback(async () => {
@@ -174,7 +178,7 @@ function ResultsPage() {
       setRerunSourceOverride(null);
     } catch (e) {
       console.error("Rerun failed:", e);
-      alert(`Rerun failed: ${e}`);
+      showExportStatus(false, `Rerun failed: ${e}`);
     } finally {
       unlisten();
       setRerunRunning(false);
@@ -183,54 +187,73 @@ function ResultsPage() {
   }, [run, rerunMetrics, rerunSourceOverride]);
 
   // Build chart data: group by encoder, bars for each preset
-  const encoderNames = [
-    ...new Set(run.results.map((r) => r.encoder.display_name)),
-  ];
+  const { encoderNames, speedData, timeData, sizeData, hasQuality, presets } = useMemo(() => {
+    if (!run) return { encoderNames: [], speedData: [], timeData: [], sizeData: [], hasQuality: false, presets: [] };
 
-  const speedData = encoderNames.map((name) => {
-    const entry: Record<string, string | number> = { name };
-    for (const preset of ["Fast", "Medium", "High"]) {
-      const result = run.results.find(
-        (r) =>
-          r.encoder.display_name === name && r.preset === preset,
-      );
-      if (result) entry[preset] = parseFloat(result.encoding_fps.toFixed(1));
-    }
-    return entry;
-  });
+    const encoderNames = [
+      ...new Set(run.results.map((r) => r.encoder.display_name)),
+    ];
 
-  const timeData = encoderNames.map((name) => {
-    const entry: Record<string, string | number> = { name };
-    for (const preset of ["Fast", "Medium", "High"]) {
-      const result = run.results.find(
-        (r) =>
-          r.encoder.display_name === name && r.preset === preset,
-      );
-      if (result)
-        entry[preset] = parseFloat((result.encoding_time_ms / 1000).toFixed(2));
-    }
-    return entry;
-  });
-
-  const sizeData = encoderNames.map((name) => {
-    const entry: Record<string, string | number> = { name };
-    for (const preset of ["Fast", "Medium", "High"]) {
-      const result = run.results.find(
-        (r) =>
-          r.encoder.display_name === name && r.preset === preset,
-      );
-      if (result)
-        entry[preset] = parseFloat(
-          (result.output_size_bytes / 1024 / 1024).toFixed(2),
+    const speedData = encoderNames.map((name) => {
+      const entry: Record<string, string | number> = { name };
+      for (const preset of ["Fast", "Medium", "High"]) {
+        const result = run.results.find(
+          (r) => r.encoder.display_name === name && r.preset === preset,
         );
-    }
-    return entry;
-  });
+        if (result) entry[preset] = parseFloat(result.encoding_fps.toFixed(1));
+      }
+      return entry;
+    });
 
-  const hasQuality = run.results.some(
-    (r) => r.vmaf != null || r.ssim != null || r.psnr != null || r.xpsnr != null || r.ssimu2 != null,
-  );
-  const presets = [...new Set(run.results.map((r) => r.preset))];
+    const timeData = encoderNames.map((name) => {
+      const entry: Record<string, string | number> = { name };
+      for (const preset of ["Fast", "Medium", "High"]) {
+        const result = run.results.find(
+          (r) => r.encoder.display_name === name && r.preset === preset,
+        );
+        if (result)
+          entry[preset] = parseFloat((result.encoding_time_ms / 1000).toFixed(2));
+      }
+      return entry;
+    });
+
+    const sizeData = encoderNames.map((name) => {
+      const entry: Record<string, string | number> = { name };
+      for (const preset of ["Fast", "Medium", "High"]) {
+        const result = run.results.find(
+          (r) => r.encoder.display_name === name && r.preset === preset,
+        );
+        if (result)
+          entry[preset] = parseFloat(
+            (result.output_size_bytes / 1024 / 1024).toFixed(2),
+          );
+      }
+      return entry;
+    });
+
+    const hasQuality = run.results.some(
+      (r) => r.vmaf != null || r.ssim != null || r.psnr != null || r.xpsnr != null || r.ssimu2 != null,
+    );
+    const presets = [...new Set(run.results.map((r) => r.preset))];
+
+    return { encoderNames, speedData, timeData, sizeData, hasQuality, presets };
+  }, [run]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-surface-400">
+        Loading results...
+      </div>
+    );
+  }
+
+  if (!run) {
+    return (
+      <div className="text-surface-400 text-center py-20">
+        Benchmark run not found
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6" ref={resultsRef}>
@@ -284,6 +307,7 @@ function ResultsPage() {
                   });
                   setRerunSourceOverride(null);
                   setRerunProgress(null);
+                  setRerunSourceWarning(null);
                   setRerunOpen(true);
                 }}
                 className="px-3 py-1.5 bg-amber-900/30 hover:bg-amber-900/50 border border-amber-700/50 rounded-lg text-xs text-amber-400 transition-colors"
@@ -490,9 +514,10 @@ function ResultsPage() {
           <>
             {hasVMAF && (
               <div className="bg-surface-900 rounded-xl border border-surface-700 p-5">
-                <h3 className="text-sm font-semibold text-surface-300 mb-4">
-                  VMAF Score (0-100)
-                </h3>
+                <div className="flex items-baseline gap-3 mb-4">
+                  <h3 className="text-sm font-semibold text-surface-300">VMAF Score (0–100)</h3>
+                  <span className="text-xs text-surface-500">≥93 transparent · 75–92 good · &lt;75 noticeable</span>
+                </div>
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={vmafData} barCategoryGap="20%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -518,11 +543,11 @@ function ResultsPage() {
                       <tr className="border-b border-surface-700">
                         <th className="text-left p-2 text-surface-400 font-medium">Encoder</th>
                         <th className="text-left p-2 text-surface-400 font-medium">Preset</th>
-                        {hasSSIM && <th className="text-right p-2 text-surface-400 font-medium">SSIM</th>}
-                        {hasPSNR && <th className="text-right p-2 text-surface-400 font-medium">PSNR (dB)</th>}
-                        {hasVMAF && <th className="text-right p-2 text-surface-400 font-medium">VMAF</th>}
-                        {hasXPSNR && <th className="text-right p-2 text-surface-400 font-medium">XPSNR (dB)</th>}
-                        {hasSsimu2 && <th className="text-right p-2 text-surface-400 font-medium">SSIMULACRA2</th>}
+                        {hasSSIM && <th className="text-right p-2 text-surface-400 font-medium cursor-help" title="0–1 (shown as %). ≥99% excellent · 95–98% good · <95% noticeable degradation">SSIM</th>}
+                        {hasPSNR && <th className="text-right p-2 text-surface-400 font-medium cursor-help" title="Higher is better (dB). ≥40 dB excellent · 35–40 dB good · <30 dB poor">PSNR (dB)</th>}
+                        {hasVMAF && <th className="text-right p-2 text-surface-400 font-medium cursor-help" title="0–100. ≥93 transparent · 75–92 good · <75 noticeable">VMAF</th>}
+                        {hasXPSNR && <th className="text-right p-2 text-surface-400 font-medium cursor-help" title="Perceptually weighted PSNR (dB). ≥40 dB excellent · 35–40 dB good · <30 dB poor">XPSNR (dB)</th>}
+                        {hasSsimu2 && <th className="text-right p-2 text-surface-400 font-medium cursor-help" title="0–100. ≥90 excellent · 70–89 good · 50–69 acceptable · <50 noticeable">SSIMULACRA2</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -575,11 +600,11 @@ function ResultsPage() {
                   const hasSsimu2Col = run.results.some((r) => r.ssimu2 != null);
                   return (
                     <>
-                      {hasVMAFCol && <th className="text-right p-3 text-surface-400 font-medium">VMAF</th>}
-                      {hasSSIMCol && <th className="text-right p-3 text-surface-400 font-medium">SSIM</th>}
-                      {hasPSNRCol && <th className="text-right p-3 text-surface-400 font-medium">PSNR</th>}
-                      {hasXPSNRCol && <th className="text-right p-3 text-surface-400 font-medium">XPSNR</th>}
-                      {hasSsimu2Col && <th className="text-right p-3 text-surface-400 font-medium">SSIMULACRA2</th>}
+                      {hasVMAFCol && <th className="text-right p-3 text-surface-400 font-medium cursor-help" title="0–100. ≥93 transparent · 75–92 good · <75 noticeable">VMAF</th>}
+                      {hasSSIMCol && <th className="text-right p-3 text-surface-400 font-medium cursor-help" title="0–1. ≥0.99 excellent · 0.95–0.98 good · <0.95 noticeable degradation">SSIM</th>}
+                      {hasPSNRCol && <th className="text-right p-3 text-surface-400 font-medium cursor-help" title="Higher is better (dB). ≥40 dB excellent · 35–40 dB good · <30 dB poor">PSNR</th>}
+                      {hasXPSNRCol && <th className="text-right p-3 text-surface-400 font-medium cursor-help" title="Perceptually weighted PSNR (dB). ≥40 dB excellent · 35–40 dB good · <30 dB poor">XPSNR</th>}
+                      {hasSsimu2Col && <th className="text-right p-3 text-surface-400 font-medium cursor-help" title="0–100. ≥90 excellent · 70–89 good · 50–69 acceptable · <50 noticeable">SSIMULACRA2</th>}
                     </>
                   );
                 })()}
@@ -716,6 +741,11 @@ function ResultsPage() {
                         ? rerunSourceOverride.split(/[/\\]/).pop()
                         : "Select source video..."}
                     </button>
+                    {rerunSourceWarning && (
+                      <p className="mt-2 text-xs text-red-400">
+                        ⚠ {rerunSourceWarning}
+                      </p>
+                    )}
                   </div>
                 )}
               </>
